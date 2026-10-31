@@ -470,5 +470,23 @@ def test_a_relay_that_never_answers_says_so_and_writes_nothing(ran):
     ran('a_relay_that_never_answers_says_so_and_writes_nothing')
 
 
+@scenario
+async def texts_opened_while_the_socket_reconnects_still_shows_the_conversations(S):
+    """"windows app -> Texts, it always gets caught on loading loop, then works fine if you close and start it"
+    (2026-10-31). The first open happens while the relay socket is not yet up (app start, a resume): Texts must show
+    the conversations once the socket is, without being closed and reopened."""
+    await S.sweep(_history())
+    b = await S.device()
+    await b.js("(()=>{for(const c of Relay._conns.values()){try{c.ws&&c.ws.close()}catch(_){}}return true})()")
+    await b.js("document.querySelector('.nav-item[data-view=\"texts\"]').click()")
+    await until(b, _has_snippet('A3 see you there') + " && " + _has_snippet('B1 your package is at the door'), 40)
+    feed = await b.js("document.querySelector('#feed').innerText")
+    assert 'Loading messages' not in feed, feed
+
+
+def test_texts_opened_while_the_socket_reconnects_still_shows_the_conversations(ran):
+    ran('texts_opened_while_the_socket_reconnects_still_shows_the_conversations')
+
+
 if __name__ == '__main__':
     sys.exit(pytest.main([os.path.abspath(__file__), '-q']))
