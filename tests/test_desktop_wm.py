@@ -374,3 +374,47 @@ server.listen(sock,async()=>{delete process.env.SWAYSOCK;delete process.env.I3SO
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(not NODE, "no node on this node")
+class AnOrdinaryDesktopIsNotTakenOver(unittest.TestCase):
+    """"It seems PosterChan tries to act like an OS on X11/XLibre WMs like i3" (2026-10-31; fine on Cinnamon). i3
+    exports I3SOCK and answers the same IPC Sway does, so the AppImage connected to the user's own i3, got a window
+    list, and the page took over as PosterChanOS. A LIVE i3-protocol socket is exported as I3SOCK (and SWAYSOCK) here:
+    the shell (--shell, i.e. PosterChanOS) may use it, the ordinary app must not, and main.js builds its bridge from
+    the --shell flag."""
+
+    def run_js(self, script):
+        js = (HARNESS.replace("__WM__", json.dumps(WM))
+                     .replace("__TREE__", json.dumps(TREE))
+                     .replace("process.env.SWAYSOCK = sock;", "process.env.SWAYSOCK = sock; process.env.I3SOCK = sock;")
+                     .replace("const wm = new WM(sock);", "const { WMForApp } = require(__WM__); const wm = null;")
+                     .replace("__WM__", json.dumps(WM))
+                     .replace("__SCRIPT__", script))
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "probe.js")
+            with open(p, "w") as fh:
+                fh.write(js)
+            r = subprocess.run([NODE, p], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        return json.loads(r.stdout)
+
+    def test_the_app_on_someone_elses_window_manager_has_none(self):
+        out = self.run_js("""
+          const app = WMForApp(false);
+          out.available = app.available();
+          try { await app.windows(); out.answered = true; } catch(e){ out.refused = String(e.message); }
+          const shell = WMForApp(true);
+          out.shellWindows = (await shell.windows()).length;
+        """)
+        self.assertFalse(out["available"], out)
+        self.assertNotIn("answered", out, "the ordinary app read the user's own window manager and would act as the OS")
+        self.assertIn("no window manager", out["refused"])
+        self.assertGreater(out["shellWindows"], 0, "the PosterChanOS shell must still reach its compositor")
+
+    def test_main_builds_the_bridge_from_the_shell_flag(self):
+        with open(os.path.join(ROOT, "desktop", "main.js"), encoding="utf-8") as fh:
+            src = fh.read()
+        body = src.split("function wm() {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("WMForApp(SHELL_MODE)", body)
+        self.assertNotIn("new WM()", body)

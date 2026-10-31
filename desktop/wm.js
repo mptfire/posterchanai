@@ -691,5 +691,17 @@ function DesktopWM(sockPath){
   return new SwayWM(sockPath);
 }
 DesktopWM.CHROME=SwayWM.CHROME;
-module.exports = { WM:DesktopWM, SwayWM, frame, decoder, flatten, clampRectToOutputs, pidFamily,
+/* ONLY POSTERCHANOS'S SHELL DRIVES A WINDOW MANAGER. "It seems PosterChan tries to act like an OS on X11/XLibre WM's
+ * like i3" (2026-10-31; fine on Cinnamon): i3 exports I3SOCK and speaks the very IPC Sway does, so compositorSockets()
+ * connected to the user's own i3, got a real window list, and the page decided it was the desktop (PCOSShell.detect:
+ * "a compositor answered") -- taskbar, start menu as tiled popup windows, window management. A Sway user running the
+ * AppImage hit the same through SWAYSOCK. PosterChanOS starts the app with --shell; anything else is an ordinary app
+ * on somebody else's desktop and gets a bridge with no socket, which every caller already reads as "no window manager". */
+function WMForApp(shell, sockPath){
+  if(shell) return new DesktopWM(sockPath);
+  const none=new SwayWM('/nonexistent');
+  none.paths=[]; none.path='';
+  return none;
+}
+module.exports = { WM:DesktopWM, WMForApp, SwayWM, frame, decoder, flatten, clampRectToOutputs, pidFamily,
                    rememberWorkArea, workAreaFor, MSG, EVENT, EVENT_BIT };

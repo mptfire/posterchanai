@@ -1934,7 +1934,7 @@ ipcMain.on('pc:window:context', (e) => {
  * rather than a set of calls that throw. */
 let _wm = null;
 function wm() {
-  if (!_wm) { const { WM } = require('./wm.js'); _wm = new WM(); }
+  if (!_wm) { const { WMForApp } = require('./wm.js'); _wm = WMForApp(SHELL_MODE); }   // not --shell = no window manager
   return _wm;
 }
 // Position in compositor layout coordinates, without uinput mouse acceleration or origin resets.
