@@ -291,7 +291,7 @@ def _script_world(tmp_path, randr, slurp_out="350,60 100x80", slurp_rc=0, size=(
     run = tmp_path / "run"
     run.mkdir()
     log = tmp_path / "calls.log"
-    _stub(bin_, "grim", PATTERN_GRIM, shebang="#!" + shutil.which("python3"))
+    _stub(bin_, "grim", PATTERN_GRIM, shebang="#!" + sys.executable)   # the test's own Python has Pillow
     _stub(bin_, "slurp", f'echo slurp >>"{log}"\n' + (f'echo "{slurp_out}"\n' if slurp_rc == 0 else "exit 1\n"))
     (tmp_path / "randr.json").write_text(json.dumps(randr))
     _stub(bin_, "wlr-randr", f'echo wlr-randr >>"{log}"\ncat "{tmp_path / "randr.json"}"\n')

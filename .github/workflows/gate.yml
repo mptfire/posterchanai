@@ -59,7 +59,7 @@ jobs:
           for attempt in 1 2 3; do
             if sudo apt-get "${APT_OPTS[@]}" update -qq \
                && sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends ffmpeg xvfb squashfs-tools \
-                    fonts-noto-color-emoji fonts-liberation libgtk-3-0t64 libnss3 libgbm1 libasound2t64 pulseaudio pulseaudio-utils; then
+                    fonts-noto-color-emoji fonts-liberation parted cryptsetup btrfs-progs dosfstools libgtk-3-0t64 libnss3 libgbm1 libasound2t64 pulseaudio pulseaudio-utils; then
               break
             fi
             sleep $((attempt * 20))
@@ -78,7 +78,24 @@ jobs:
           sudo ln -sf "$(command -v node)" /usr/bin/node
           sudo mkdir -p /var/lib/posterchanai && sudo chown "$USER" /var/lib/posterchanai
           npm install --no-save --no-package-lock acorn@8
-          fc-match sans-serif
+          # Liberation Sans, as on server1: Ubuntu resolves sans-serif to DejaVu Sans, which is wider, and the layout checks
+          # measure where text wraps.
+          mkdir -p ~/.config/fontconfig
+          printf '%s\n' '<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig>' \
+            '<alias><family>sans-serif</family><prefer><family>Liberation Sans</family></prefer></alias>' \
+            '<alias><family>serif</family><prefer><family>Liberation Serif</family></prefer></alias>' \
+            '<alias><family>monospace</family><prefer><family>Liberation Mono</family></prefer></alias></fontconfig>' \
+            > ~/.config/fontconfig/fonts.conf
+          fc-cache -f >/dev/null
+          echo "sans-serif is now: $(fc-match sans-serif)"
+          test "$(fc-match -f '%{family}' sans-serif)" = "Liberation Sans"
+          # A CURRENT ffmpeg, as the nodes run (server1: 8.x). Ubuntu's 6.1 joins a reconnected stream's recordings into
+          # half a VOD -- tracked as its own bug (task: VOD join on older ffmpeg), not something to learn here by accident.
+          curl -fsSL --retry 5 https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o "$RUNNER_TEMP/ff.txz"
+          mkdir -p "$RUNNER_TEMP/ff" && tar -xJf "$RUNNER_TEMP/ff.txz" -C "$RUNNER_TEMP/ff" --strip-components=1
+          sudo install -m 0755 "$RUNNER_TEMP/ff/ffmpeg" "$RUNNER_TEMP/ff/ffprobe" /usr/local/bin/
+          sudo ln -sf /usr/local/bin/ffmpeg /usr/bin/ffmpeg && sudo ln -sf /usr/local/bin/ffprobe /usr/bin/ffprobe
+          ffmpeg -version | head -1
 
       - name: LiveKit for the call tests
         timeout-minutes: 5
@@ -103,7 +120,7 @@ jobs:
           set -euo pipefail
           python -m venv venv-unified
           venv-unified/bin/pip install -r requirements-nostr.txt -r requirements-test.txt -r scripts/deploy-regression-requirements.txt \
-            huggingface_hub
+            huggingface_hub chess
           # The XRP SDK lives in its OWN venv on every node (scripts/install/exodus_xrp_sdk.sh) -- it pins websockets
           # below the app's -- and the XRP tests run it there.
           sudo mkdir -p /usr/local/libexec/pc-exodus && sudo chown "$USER" /usr/local/libexec/pc-exodus
