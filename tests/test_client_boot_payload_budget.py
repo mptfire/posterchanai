@@ -164,7 +164,9 @@ PAGE = (ROOT / "templates/client.html").read_text(encoding="utf-8")
 #: phoneshell's launch view): "we need regression testing for messages". 8.2313 MB measured.
 #: ...and 8.232 -> 8.234 for All repos appending its next page (git.js appendPage) and Concord's membership sync
 #: repainting only on change (concord.js): Vyram f6493e34 / eaeb13f1. 8.2340 MB measured.
-BUDGET_MB = 8.234
+#: ...and 8.234 -> 8.235 for link cards that never store an empty answer (linkcards.js _pvMiss): own-site links got
+#: none in the app until 2026-10-31 and the stored {} would have outlived the fix.
+BUDGET_MB = 8.235
 #: No single asset should be a surprise. app.js is 2.55 MB and is the reason this is not lower.
 # RAISED 2026-09-18, 2.80 -> 2.85, AND DELIBERATELY BY THE MEASURED AMOUNT AND NOT A ROUND NUMBER.
 #

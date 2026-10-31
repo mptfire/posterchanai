@@ -3043,6 +3043,70 @@ async def _preview_http():
     return _preview_client
 
 
+def _preview_from_html(html: str, url: str, target: str, host: str) -> dict:
+    """The card a page's own tags describe: og:/twitter: title, description, image (absolute against `target`, where
+    the fetch ENDED), site. One parser for pages fetched over the network and this instance's own pages."""
+    import re
+    from urllib.parse import urljoin
+    import html as _html
+
+    def meta(*names):
+        """A meta tag's content as TEXT: the attribute's own quote closes it (an apostrophe inside
+        "…" is content, not the end), and entities are decoded -- a page writing The Writing&#x27;s
+        showed exactly that in the card (reported 2026-10-30). The client escapes on render."""
+        val = r'''content=(?:"([^"]*)"|'([^']*)')'''
+        for n in names:
+            key = r'''(?:property|name)=["']''' + re.escape(n) + r'''["']'''
+            m = re.search(r"<meta\b[^>]*?" + key + r"[^>]*?" + val, html, re.I) \
+                or re.search(r"<meta\b[^>]*?" + val + r"[^>]*?" + key, html, re.I)
+            got = m and (m.group(1) if m.group(1) is not None else m.group(2))
+            if got and got.strip():
+                return " ".join(_html.unescape(got).split())
+        return None
+
+    title = meta("og:title", "twitter:title")
+    if not title:
+        tm = re.search(r"<title[^>]*>([^<]+)</title>", html, re.I)
+        title = " ".join(_html.unescape(tm.group(1)).split()) if tm else None
+    img = meta("og:image", "twitter:image", "twitter:image:src")
+    if img:
+        img = urljoin(target, img)   # relative to where we ENDED, not where we asked
+    return {"url": url, "title": title, "description": meta("og:description", "twitter:description", "description"),
+            "image": img, "site": meta("og:site_name") or host}
+
+
+async def _own_page_preview(url: str, host: str):
+    """THIS INSTANCE'S OWN LINKS ARE RENDERED HERE, NOT FETCHED (2026-10-31: "i pasted
+    https://poster.place/@npub…/bitcoin-whitepaper-day in Concord and just shows a link"). The fetch below refuses
+    private addresses, and from inside the network poster.place resolves to the router (192.168.0.1) -- so every link
+    to our own posts, articles, profiles and repos came back empty, in every in-app card, while Discord showed them
+    fine. The page is rendered by the app itself (ASGI, no socket, no SSRF question) and its og: tags read the same
+    way. None when `host` is not ours."""
+    from urllib.parse import urlparse
+    try:
+        from app.services.activitypub import config as ap_config
+        base = urlparse(ap_config.base_url() or "")
+    except Exception:
+        return None
+    if not base.hostname or host.lower() != base.hostname.lower():
+        return None
+    import httpx
+    from app.main import app as _app
+    u = urlparse(url)
+    path = (u.path or "/") + (("?" + u.query) if u.query else "")
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=_app), base_url="%s://%s" % (base.scheme or "https", base.netloc),
+                                     follow_redirects=True, timeout=10.0,
+                                     headers={"User-Agent": "PosterChan-LinkPreview", "Host": base.netloc}) as c:
+            r = await c.get(path)
+    except Exception as e:  # noqa: BLE001 -- a card is optional; the link still works
+        logger.debug("[preview] own page %s failed: %s", path[:80], e)
+        return {}
+    if r.status_code != 200 or "text/html" not in r.headers.get("content-type", ""):
+        return {}
+    return _preview_from_html(r.text[:524288], url, str(r.url), host)
+
+
 @router.get("/preview")
 async def link_preview(url: str):
     """Fetch OpenGraph/Twitter-card metadata for a URL so the client can show a link card.
@@ -3056,6 +3120,11 @@ async def link_preview(url: str):
     if hit and hit[0] > now:
         return JSONResponse(hit[1])
     host = urlparse(url).hostname or ""
+    own = await _own_page_preview(url, host) if host else None
+    if own is not None:
+        if own:
+            _preview_cache[url] = (now + _PREVIEW_TTL, own)
+        return JSONResponse(own)
     if not host or not await _is_public_host_async(host):
         return JSONResponse({})
     # Queue for one of the node's few fetch slots. Giving up empty-handed after a short wait is
@@ -3094,31 +3163,7 @@ async def link_preview(url: str):
                             break
                     html = body.decode("utf-8", "ignore")
 
-                    import html as _html
-
-                    def meta(*names):
-                        """A meta tag's content as TEXT: the attribute's own quote closes it (an apostrophe inside
-                        "…" is content, not the end), and entities are decoded -- a page writing The Writing&#x27;s
-                        showed exactly that in the card (reported 2026-10-30). The client escapes on render."""
-                        val = r'''content=(?:"([^"]*)"|'([^']*)')'''
-                        for n in names:
-                            key = r'''(?:property|name)=["']''' + re.escape(n) + r'''["']'''
-                            m = re.search(r"<meta\b[^>]*?" + key + r"[^>]*?" + val, html, re.I) \
-                                or re.search(r"<meta\b[^>]*?" + val + r"[^>]*?" + key, html, re.I)
-                            got = m and (m.group(1) if m.group(1) is not None else m.group(2))
-                            if got and got.strip():
-                                return " ".join(_html.unescape(got).split())
-                        return None
-
-                    title = meta("og:title", "twitter:title")
-                    if not title:
-                        tm = re.search(r"<title[^>]*>([^<]+)</title>", html, re.I)
-                        title = " ".join(_html.unescape(tm.group(1)).split()) if tm else None
-                    img = meta("og:image", "twitter:image", "twitter:image:src")
-                    if img:
-                        img = urljoin(target, img)   # relative to where we ENDED, not where we asked
-                    data = {"url": url, "title": title, "description": meta("og:description", "twitter:description", "description"),
-                            "image": img, "site": meta("og:site_name") or host}
+                    data = _preview_from_html(html, url, target, host)
                 break
     except Exception as e:
         logger.debug("[client] preview fetch failed for %s: %s", url, e)

@@ -60,4 +60,4 @@ def test_a_quote_of_the_other_kind_is_content_not_the_end(monkeypatch):
 
 def test_old_cached_cards_are_not_reused():
     src = open("static/js/client/linkcards.js").read()
-    assert "const K='pc-lpv-v2'" in src, "the client's preview cache must drop entries stored before the fix"
+    assert "const K='pc-lpv-v3'" in src, "the client's preview cache must drop entries stored before the fix"

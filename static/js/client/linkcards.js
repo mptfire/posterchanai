@@ -20,7 +20,7 @@ window.PCLinkCardsFactory = function(dep){
   // disk, linkCardHtml can emit the finished card inline on the very first paint, so a link you have seen
   // before never moves anything again. The remaining shift is a genuinely new URL, once.
   const _pv=(()=>{
-    const K='pc-lpv-v2', MAX=600;   // v2: v1 held titles with undecoded entities (&#x27;) from before the server decoded them
+    const K='pc-lpv-v3', MAX=600;   // v3: v2 held EMPTY answers for this instance's own links (the server could not render them until 2026-10-31); v2 also fixed undecoded &#x27; titles
     let m=new Map(), dirty=false, t=null;
     try{ const raw=localStorage.getItem(K); if(raw) m=new Map(Object.entries(JSON.parse(raw))); }catch(_){}
     function flush(){ t=null; if(!dirty) return; dirty=false;
@@ -130,7 +130,12 @@ window.PCLinkCardsFactory = function(dep){
     });
     _lcPump();
   }
-  async function fetchPreview(url){ if(_pv.has(url)) return _pv.get(url); let d=null; try{ d=await fetch('/client/preview?url='+encodeURIComponent(url)).then(r=>r.json()); }catch(_){} _pv.set(url,d); return d; }
+  /* "No card" is remembered for THIS PAGE only, never in localStorage: a stored empty answer outlived the server bug that
+   * produced it ("i pasted a poster.place link in Concord and it just shows a link"), and a site that was down once
+   * would otherwise never get a card on this device again. */
+  const _pvMiss=new Set();
+  async function fetchPreview(url){ if(_pv.has(url)) return _pv.get(url); if(_pvMiss.has(url)) return null; let d=null; try{ d=await fetch('/client/preview?url='+encodeURIComponent(url)).then(r=>r.json()); }catch(_){}
+    if(_pvUseful(d)) _pv.set(url,d); else _pvMiss.add(url); return d; }
   async function fillLinkCard(el){
     const url=el.dataset.url; const d=await fetchPreview(url);
     if(!_pvUseful(d)){ el.remove(); return; }
