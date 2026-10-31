@@ -162,7 +162,9 @@ PAGE = (ROOT / "templates/client.html").read_text(encoding="utf-8")
 #: calls.js _callsMayRing + the Calls screen's switch): "call spam from people he knows". 8.2307 MB measured.
 #: ...and 8.231 -> 8.232 for a DM notification that opens the sender's conversation (app.js `dm:<pk>` route,
 #: phoneshell's launch view): "we need regression testing for messages". 8.2313 MB measured.
-BUDGET_MB = 8.232
+#: ...and 8.232 -> 8.234 for All repos appending its next page (git.js appendPage) and Concord's membership sync
+#: repainting only on change (concord.js): Vyram f6493e34 / eaeb13f1. 8.2340 MB measured.
+BUDGET_MB = 8.234
 #: No single asset should be a surprise. app.js is 2.55 MB and is the reason this is not lower.
 # RAISED 2026-09-18, 2.80 -> 2.85, AND DELIBERATELY BY THE MEASURED AMOUNT AND NOT A ROUND NUMBER.
 #
