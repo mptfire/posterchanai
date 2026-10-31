@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run_deploy(tmp_path, failure):
+def run_deploy(tmp_path, failure, gate='local', ci_rc='0'):
     # Isolate fixed log files; execute all deployment control flow unchanged.
     source = (ROOT / "sync.sh").read_text().replace("/tmp/", str(tmp_path / "tmp") + "/")
     (tmp_path / "sync.sh").write_text(source)
@@ -27,6 +27,7 @@ args=sys.argv[1:]
 with open(os.environ['CALL_LOG'],'a') as output:
     output.write(json.dumps([name,*args])+'\n')
 failure=os.environ['FAILURE']
+if args[:1]==['scripts/ci_gate.py']:sys.exit(int(os.environ.get('CI_RC','0')))
 if name=='git':
     if args[0]=='status':
         if failure=='status':sys.exit(128)
@@ -50,7 +51,7 @@ elif name=='systemctl':
         path.write_text(stub)
         path.chmod(0o755)
     result = subprocess.run(["bash", "sync.sh"], cwd=tmp_path, text=True, capture_output=True,
-                            timeout=10, env={**os.environ, "PATH":str(tools)+os.pathsep+os.environ['PATH'],
+                            timeout=10, env={**os.environ, "PC_GATE": gate, "CI_RC": ci_rc, "PATH":str(tools)+os.pathsep+os.environ['PATH'],
                                              "SKIP_LINT":"1", "CALL_LOG":str(log), "FAILURE":failure})
     calls = [json.loads(line) for line in log.read_text().splitlines()]
     return result, calls
@@ -81,3 +82,39 @@ def test_clean_or_successfully_committed_tree_can_deploy(tmp_path, state):
     commits = [call for call in calls if call[:2] == ["git", "commit"]]
     assert bool(commits) == (state == "changed"), calls
     assert (tmp_path / ".git/posterchanai-deployed").read_text().strip() == "a" * 40
+
+
+# ---- the gate on GitHub Actions (scripts/ci_gate.py; 2026-10-31) --------------------------------------------------
+def _ran_local_gate(calls):
+    return any(len(c) > 1 and c[1] == "scripts/deploy_regression_gate.py" and "--full" in c for c in calls)
+
+
+def test_a_red_github_gate_deploys_nothing(tmp_path):
+    result, calls = run_deploy(tmp_path, "clean", gate="github", ci_rc="1")
+    assert result.returncode != 0 and "failed on GitHub Actions" in result.stdout, result.stdout
+    assert not any(call[:2] == ["git", "push"] for call in calls), calls
+    assert not _ran_local_gate(calls)
+    assert not any(call[0] in ("ssh", "sudo") for call in calls), calls
+
+
+def test_github_that_cannot_answer_falls_back_to_the_local_gate(tmp_path):
+    """An outage may slow a deploy; it must never let one through untested."""
+    result, calls = run_deploy(tmp_path, "clean", gate="github", ci_rc="3")
+    assert "running the gate here instead" in result.stdout, result.stdout
+    assert _ran_local_gate(calls), calls
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_green_github_gate_deploys_without_a_local_run(tmp_path):
+    result, calls = run_deploy(tmp_path, "clean", gate="github", ci_rc="0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not _ran_local_gate(calls), "the suite ran here as well -- the whole point was not to"
+    assert ["git", "push", "origin", "master"] in calls
+
+
+def test_the_local_gate_is_still_a_choice(tmp_path):
+    """"we need to keep it local way as an option" -- PC_GATE=local never asks GitHub."""
+    result, calls = run_deploy(tmp_path, "clean", gate="local")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _ran_local_gate(calls)
+    assert not any(c[1:2] == ["scripts/ci_gate.py"] for c in calls if len(c) > 1)

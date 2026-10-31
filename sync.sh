@@ -34,7 +34,29 @@ if [ -n "$PC_GATE_REQUIRED_ONLY" ]; then
 else
     _gate_args="--full"
 fi
-if ! venv-unified/bin/python scripts/deploy_regression_gate.py $_gate_args --receipt "$_regression_receipt"; then
+# WHERE THE GATE RUNS (2026-10-31). Default: GitHub Actions (.github/workflows/gate.yml via scripts/ci_gate.py), so a
+# deploy costs this machine no test run. The commit being deployed is made FIRST and that exact commit is what GitHub
+# tests; nothing is pushed to origin until it is green. PC_GATE=local (or PC_GATE_REQUIRED_ONLY) runs it here as
+# before -- "we need to keep it local way as an option". GitHub that cannot be asked (exit 3) falls back to local:
+# an outage can slow a deploy, never skip its tests.
+_ci_sha=""
+if [ "${PC_GATE:-github}" != "local" ] && [ -z "$PC_GATE_REQUIRED_ONLY" ]; then
+    if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+        git commit -q -a -m fix || { echo "[sync] ABORT: could not commit the changes to test; nothing was pushed"; exit 1; }
+    fi
+    venv-unified/bin/python scripts/ci_gate.py
+    _ci_rc=$?
+    if [ "$_ci_rc" = "0" ]; then
+        _ci_sha=$(git rev-parse HEAD)
+        echo "[sync] GitHub Actions passed the full suite on ${_ci_sha:0:12}"
+    elif [ "$_ci_rc" = "1" ]; then
+        echo "[sync] ABORT: the full suite failed on GitHub Actions (above); nothing was deployed"
+        exit 1
+    else
+        echo "[sync] GitHub Actions could not answer -- running the gate here instead"
+    fi
+fi
+if [ -z "$_ci_sha" ] && ! venv-unified/bin/python scripts/deploy_regression_gate.py $_gate_args --receipt "$_regression_receipt"; then
     echo "[sync] ABORT: required regression checks did not pass; nothing was deployed"
     exit 1
 fi
@@ -144,7 +166,13 @@ if command -v gh >/dev/null 2>&1; then
     venv-unified/bin/python scripts/watch_app_builds.py --last 2>&1 | sed 's/^/[sync] previous deploy: /'
     [ "${PIPESTATUS[0]}" = "0" ] || echo "[sync] WARN: the previous deploy's APK/desktop apps were NOT all published (above)"
 fi
-if ! venv-unified/bin/python scripts/deploy_regression_gate.py --verify "$_regression_receipt"; then
+if [ -n "$_ci_sha" ]; then
+    # What GitHub tested must be exactly what gets pushed: the same commit, and nothing uncommitted on top.
+    if [ "$(git rev-parse HEAD)" != "$_ci_sha" ] || [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+        echo "[sync] ABORT: source changed after GitHub tested ${_ci_sha:0:12}; nothing was pushed"
+        exit 1
+    fi
+elif ! venv-unified/bin/python scripts/deploy_regression_gate.py --verify "$_regression_receipt"; then
     echo "[sync] ABORT: source changed after testing; nothing was pushed"
     exit 1
 fi

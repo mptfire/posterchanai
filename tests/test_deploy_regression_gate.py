@@ -51,7 +51,7 @@ def test_sync_cannot_push_or_restart_after_a_failed_gate(tmp_path):
         guard.chmod(0o755)
     sentinel = tmp_path / 'side-effects'
     result = subprocess.run(['bash', 'sync.sh'], cwd=tmp_path,
-                            env=dict(os.environ, PATH=str(bin_dir)+':'+os.environ['PATH'],
+                            env=dict(os.environ, PC_GATE='local', PATH=str(bin_dir)+':'+os.environ['PATH'],
                                      SIDE_EFFECT_LOG=str(sentinel)),
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 1, result.stdout + result.stderr
@@ -182,7 +182,7 @@ exit 99
     git.chmod(0o755)
     sentinel = tmp_path / 'side-effects'
     result = subprocess.run(['bash', 'sync.sh'], cwd=tmp_path,
-                            env=dict(os.environ, SKIP_LINT='1',
+                            env=dict(os.environ, PC_GATE='local', SKIP_LINT='1',
                                      PATH=str(bindir)+':'+os.environ['PATH'], SIDE_EFFECT_LOG=str(sentinel)),
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 1, result.stdout + result.stderr
