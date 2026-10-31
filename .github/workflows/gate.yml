@@ -1,0 +1,104 @@
+name: Deploy gate
+
+# THE FULL TEST SUITE, ON GITHUB'S MACHINES INSTEAD OF THE SERVER (2026-10-31: "use github actions to do our testing so
+# we can save machine resources locally"). sync.sh pushes the commit it is about to deploy to `ci/<sha>`, waits for this
+# workflow on that exact commit, and deploys only if every part is green. The suite is cut into PARTS deterministic
+# slices (scripts/deploy_regression_gate.py --part K/N) that together cover every test file exactly once; each runner
+# shards its slice again across its own CPUs, with the gate's flaky re-run. The local gate stays: PC_GATE=local ./sync.sh.
+
+on:
+  push:
+    branches: [ 'ci/**' ]
+  workflow_dispatch:
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  part:
+    name: part ${{ matrix.part }}/8
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements-nostr.txt
+            requirements-test.txt
+            scripts/deploy-regression-requirements.txt
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: System packages
+        timeout-minutes: 12
+        shell: bash
+        run: |
+          set -euo pipefail
+          APT_OPTS=(-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          for attempt in 1 2 3; do
+            if sudo apt-get "${APT_OPTS[@]}" update -qq \
+               && sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends ffmpeg xvfb squashfs-tools \
+                    fonts-noto-color-emoji libgtk-3-0t64 libnss3 libgbm1 libasound2t64 pulseaudio pulseaudio-utils; then
+              exit 0
+            fi
+            sleep $((attempt * 20))
+          done
+          exit 1
+
+      - name: LiveKit for the call tests
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/install/livekit.sh
+          setup_livekit_server
+          test -x livekit/livekit-server
+
+      - name: Desktop app dependencies (Electron)
+        working-directory: desktop
+        shell: bash
+        run: |
+          for i in 1 2 3; do npm ci && break; rm -rf node_modules; sleep $((i*15)); done
+          timeout --kill-after=5s 120s node node_modules/electron/install.js
+          test -x node_modules/electron/dist/electron
+
+      - name: Python environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv venv-unified
+          venv-unified/bin/pip install -r requirements-nostr.txt -r requirements-test.txt -r scripts/deploy-regression-requirements.txt
+
+      - name: Tests, part ${{ matrix.part }} of 8
+        timeout-minutes: 60
+        shell: bash
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+        run: |
+          set -euo pipefail
+          test -x /opt/google/chrome/chrome
+          xvfb-run -a venv-unified/bin/python scripts/deploy_regression_gate.py --part ${{ matrix.part }}/8 --jobs 4
+
+      - name: Failure details
+        if: failure()
+        shell: bash
+        run: ls -1 ~/.cache/posterchanai/flaky 2>/dev/null | tail -20 || true

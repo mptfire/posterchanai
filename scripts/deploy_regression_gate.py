@@ -1119,6 +1119,41 @@ def run_suite(name, root=ROOT, jobs=0):
     return 1
 
 
+def part_files(root, k, n):
+    """The test files of part K of N: the whole suite cut into N balanced, DETERMINISTIC slices (size-based -- the
+    durations file is per machine and a CI runner has none), so N runners that never talk to each other between them
+    cover every file exactly once."""
+    files = discover_test_files(root)
+    slices = plan_shards(files, n, {}, root)
+    slices += [[]] * (n - len(slices))
+    return slices[k]
+
+
+def run_part(spec, root=ROOT, jobs=0):
+    """`--part K/N`: one slice of the full suite, sharded on this machine, with the gate's flaky re-run. What each
+    GitHub Actions runner does (.github/workflows/gate.yml) so the deploy gate costs this machine nothing
+    (2026-10-31: "use github actions to do our testing so we can save machine resources locally")."""
+    try:
+        k, n = (int(x) for x in str(spec).split('/', 1))
+        assert n > 0 and 0 <= k < n
+    except (ValueError, AssertionError):
+        print('[regressions] --part must be K/N with 0 <= K < N, got %r' % spec)
+        return 2
+    mine = set(part_files(root, k, n))
+    print('[regressions] part %d/%d: %d test file(s)' % (k, n, len(mine)))
+    private_tmp = runpy.run_path(str(Path(__file__).with_name('private_tmp.py')))
+    with tempfile.TemporaryDirectory(prefix='pc-part-') as directory, private_tmp['scoped']('pct-part-') as scratch:
+        env = private_tmp['child_env'](dict(os.environ), scratch)
+        for drop in ('PYTEST_ADDOPTS', 'PYTEST_PLUGINS'):
+            env.pop(drop, None)
+        if not mine:
+            print('[regressions] nothing in this part')
+            return 0
+        ok, message = run_full_suite(root, env, directory, jobs=jobs, select=lambda f: f in mine)
+    print('[regressions] ' + message)
+    return 0 if ok else 1
+
+
 def run_changed(root=ROOT, jobs=0):
     """`--changed`: the preflight on its own -- the tests that name what changed, sharded, retry-alone for flakes. The
     quick answer before ./sync.sh (which runs it again first, then everything)."""
@@ -1153,7 +1188,11 @@ if __name__ == '__main__':
                              'the preflight on its own, a quick check before ./sync.sh; no receipt')
     parser.add_argument('--suite', choices=sorted(SUITES),
                         help='run only this half of the full suite, sharded (./test.sh); no required list, no receipt')
+    parser.add_argument('--part', metavar='K/N',
+                        help='run slice K of the full suite cut into N (one GitHub Actions runner each); no receipt')
     args = parser.parse_args()
+    if args.part:
+        raise SystemExit(run_part(args.part, jobs=args.jobs))
     if args.suite:
         raise SystemExit(run_suite(args.suite, jobs=args.jobs))
     if args.changed:
