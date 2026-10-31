@@ -75,3 +75,45 @@ def test_all_repos_and_back_is_quick(width):
         assert not await b.js("__errors.slice()")
 
     asyncio.run(desktop.with_browser("online", "?pcShell=1", check))
+
+
+DEEPER = """(async () => {
+  const cards = () => document.querySelectorAll('#repo-results .repo-card').length;
+  const first = document.querySelector('#repo-results .repo-card');
+  const steps = [];
+  for (let i = 0; i < 10; i++) {
+    const before = cards(), more = document.querySelector('#repo-results .repo-more');
+    if (!more) break;
+    const t0 = performance.now();
+    more.scrollIntoView();
+    while (cards() === before && performance.now() - t0 < 3000) await new Promise(r => setTimeout(r, 5));
+    steps.push({ cards: cards(), ms: Math.round(performance.now() - t0) });
+  }
+  return { steps, kept: first.isConnected };
+})()"""
+
+
+@pytest.mark.skipif(not Path("/opt/google/chrome/chrome").exists(), reason="Chrome required")
+def test_scrolling_to_the_bottom_adds_a_page_without_redrawing_the_ones_above():
+    """Vyram, 2026-10-30: "loading when scrolling to the bottom can be slightly faster". Every page rebuilt all the
+    cards above it (60, 120, 180 ...), so each step was slower than the last and the cards under the finger were
+    replaced. Ten pages deep: the cards already drawn are the SAME elements, and the tenth page costs about what the
+    first did."""
+    got = {}
+
+    async def check(b):
+        await b.call("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 900, "deviceScaleFactor": 1, "mobile": True})
+        await desktop.login(b)
+        await b.js(SEED)
+        await b.until("!!document.querySelector('.repo-sc[data-scope=\"all\"]')")
+        await b.js("document.querySelector('.repo-sc[data-scope=\"all\"]').click(); 1")
+        await b.until("/1600 repos/.test(document.querySelector('#repo-q').placeholder)")
+        got.update(await b.js(DEEPER))
+        assert not await b.js("__errors.slice()")
+
+    asyncio.run(desktop.with_browser("online", "?pcShell=1", check))
+    print("pages", got)
+    steps = got["steps"]
+    assert len(steps) == 10 and steps[-1]["cards"] >= 600, got
+    assert got["kept"], ("loading more rebuilt the cards already on screen", got)
+    assert steps[-1]["ms"] <= max(3 * steps[0]["ms"], 120), ("each page is slower than the one before", got)

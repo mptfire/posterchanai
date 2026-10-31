@@ -377,7 +377,7 @@ window.PCGitFactory = function(dep){
      * delay before it switches ... it hangs when trying to switch back", 2026-10-29). The first REPO_PAGE draw at
      * once and the next page follows when the end of the list scrolls into view. Search and the counts still cover
      * the whole list; a new scope or search starts again from the top. */
-    let shown=REPO_PAGE, moreObs=null, lastKey='';
+    let shown=REPO_PAGE, moreObs=null, lastKey='', appendPage=()=>{};
     paint=()=>{
       if(!live()) return;
       const base=scoped();
@@ -399,9 +399,30 @@ window.PCGitFactory = function(dep){
       { const rt=$('#repo-retry'); if(rt) rt.onclick=()=>renderRepos(); }
       const more=$('#repo-results .repo-more',feed);
       if(more && typeof IntersectionObserver==='function'){
-        moreObs=new IntersectionObserver(ents=>{ if(ents.some(x=>x.isIntersecting) && live()){ shown+=REPO_PAGE; paint(); } }, { rootMargin:'600px 0px' });
+        /* The next page is APPENDED, never a repaint of everything above it: each page used to rebuild all the cards
+         * already shown (60, 120, 180 ...), so the further down, the longer the wait ("loading when scrolling to the
+         * bottom can be slightly faster", 2026-10-30). Asked for well before the end, so it is usually there first. */
+        moreObs=new IntersectionObserver(ents=>{ if(ents.some(x=>x.isIntersecting) && live()) appendPage(); }, { rootMargin:'1600px 0px' });
         moreObs.observe(more);
       } else if(more){ more.innerHTML=`<button class="btn small">Show ${Math.min(REPO_PAGE, hits.length-shown)} more</button>`; more.querySelector('button').onclick=()=>{ shown+=REPO_PAGE; paint(); }; }
+    };
+    appendPage=()=>{
+      const base=scoped();
+      const terms=((q&&q.value)||'').toLowerCase().split(/\s+/).filter(Boolean);
+      const key=_repoScope+'\u0001'+terms.join(' ');
+      const g=$('#repo-results .repo-grid',feed), more=$('#repo-results .repo-more',feed);
+      if(key!==lastKey || !g || !more){ shown+=REPO_PAGE; paint(); return; }
+      const hits=terms.length ? base.filter(e=>{ const h=_repoHaystack(e); return terms.every(t=>h.includes(t)); }) : base;
+      const next=hits.slice(shown, shown+REPO_PAGE); shown+=next.length;
+      g.insertAdjacentHTML('beforeend', next.map(repoCard).join(''));
+      const rest=hits.length-shown;
+      if(rest>0){
+        more.textContent=`${rest} more \u2014 loading as you scroll`;
+        // Still in range after the append (a tall screen, a fast fling): ask again, or the observer -- which only
+        // reports CHANGES -- would sit there with the sentinel visible and nothing more coming.
+        if(moreObs){ moreObs.unobserve(more); moreObs.observe(more); }
+      } else { if(moreObs){ moreObs.disconnect(); moreObs=null; } more.remove(); }
+      wire();
     };
     paint();
     $$('.repo-sc',feed).forEach(b=> b.onclick=()=>{
