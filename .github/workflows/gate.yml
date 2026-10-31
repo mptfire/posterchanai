@@ -103,7 +103,12 @@ jobs:
           set -euo pipefail
           python -m venv venv-unified
           venv-unified/bin/pip install -r requirements-nostr.txt -r requirements-test.txt -r scripts/deploy-regression-requirements.txt \
-            -r requirements-exodus-xrp.txt huggingface_hub
+            huggingface_hub
+          # The XRP SDK lives in its OWN venv on every node (scripts/install/exodus_xrp_sdk.sh) -- it pins websockets
+          # below the app's -- and the XRP tests run it there.
+          sudo mkdir -p /usr/local/libexec/pc-exodus && sudo chown "$USER" /usr/local/libexec/pc-exodus
+          python -m venv /usr/local/libexec/pc-exodus/xrp-venv
+          /usr/local/libexec/pc-exodus/xrp-venv/bin/pip install -r requirements-exodus-xrp.txt
           # torch for the image-generation code paths the tests drive with stubs (no GPU needed): the CPU wheel.
           venv-unified/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
 
