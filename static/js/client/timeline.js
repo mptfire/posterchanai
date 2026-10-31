@@ -1001,14 +1001,13 @@ window.PCTimelineFactory = function(dep){
       +(() => { const off = tlHiddenSet();
         const tls = [['home','Home'],['global','Nostrverse'],['trending','Trending']]
           .filter(([t]) => !off.has(t) || S.VIEW === t);   // the tab you are ON always shows, or the row lies about where you are
-        /* ON A PHONE THE ROW IS A PICKER + A REPLIES CHIP, not three tabs. Both are rendered and CSS
+        /* ON A PHONE THE ROW IS A PICKER + A REPLIES SLIDER, not three tabs. Both are rendered and CSS
          * picks (`.tl-pick-on` in the APK at any width, the 820px query on the web), so a rotation or a
-         * window resize never needs a re-render. The chip IS the User Settings "Hide replies in
-         * timelines" preference, inverted (pressed = shown) -- one value, two places to change it. A
-         * CHIP, not a switch: a settings-page switch in a feed header reads as a setting rather than as
-         * what you are looking at, and its on/off is easy to misread -- the chip's words say the state
-         * ("[tick] Replies" / "Replies hidden"), and Trending's own filters are chips. Trending has no reply
-         * filter, so it gets no chip rather than one that does nothing. */
+         * window resize never needs a re-render. The slider IS the User Settings "Hide replies in
+         * timelines" preference, inverted (All = shown) -- one value, two places to change it. It is the
+         * profile's All / Posts / Replies control made small ("replies should be a slider like on profile
+         * but less space used", 2026-10-31): both choices are always on screen, so the state is read off
+         * which one is lit, not off a chip's wording. Trending has no reply filter, so it gets none. */
         const showR = !ClientSettings.get('hideReplies', false);
         return `<div class="tl-tabs${_tlNative() ? ' tl-pick-on' : ''}" role="tablist">
         ${tls.map(([t,l]) => `<button class="tltab${S.VIEW===t?' on':''}" data-tl="${t}" role="tab" aria-selected="${S.VIEW===t}">${l}</button>`).join('')}
@@ -1019,15 +1018,17 @@ window.PCTimelineFactory = function(dep){
         ${S.VIEW==='trending' ? '' : `<button class="tltab-media${S._tlMedia?' on':''}" id="tl-media-tab" title="Toggle media grid (this feed, images only)" aria-label="Toggle media grid"><svg class="ic x-ic" aria-hidden="true"><use href="#i-grid"></use></svg></button>`}
       </div>`; })();
   }
-  const _TL_REPLIES_TITLE = show => show ? 'Replies are shown — tap to hide them' : 'Replies are hidden — tap to show them';
+  const _TL_REPLIES_TITLE = show => show ? 'Showing posts and replies — tap Posts to hide replies' : 'Showing posts only — tap All to show replies';
+  // ONE button (aria-pressed = replies shown), so a screen reader hears a single switch; the two words are its
+  // halves and the thumb slides to the lit one. A tap on a half picks it, a tap anywhere else flips.
   function _tlRepliesChip(show){
-    return `<button type="button" class="tl-replies${show?' on':''}" id="tl-replies" aria-pressed="${show}" title="${_TL_REPLIES_TITLE(show)}">${_TL_REPLIES_LABEL(show)}</button>`;
+    return `<button type="button" class="tl-replies${show?' on':''}" id="tl-replies" aria-pressed="${show}" aria-label="Show replies" title="${_TL_REPLIES_TITLE(show)}" style="--i:${show?0:1}">`
+      + `<span class="tl-seg-thumb" aria-hidden="true"></span><span class="tl-seg${show?' on':''}" data-r="all">All</span><span class="tl-seg${show?'':' on'}" data-r="posts">Posts</span></button>`;
   }
-  // The tick is the sprite's icon: the UI font has no ✓ glyph, and it drew as an empty box.
-  const _TL_REPLIES_LABEL = show => show ? '<svg class="ic tl-replies-ic" aria-hidden="true"><use href="#i-check"></use></svg>Replies' : 'Replies hidden';
   function _tlPaintRepliesChip(b, show){
     b.classList.toggle('on', show); b.setAttribute('aria-pressed', String(show));
-    b.title = _TL_REPLIES_TITLE(show); b.innerHTML = _TL_REPLIES_LABEL(show);
+    b.title = _TL_REPLIES_TITLE(show); b.style.setProperty('--i', show ? 0 : 1);
+    b.querySelectorAll('[data-r]').forEach(x => x.classList.toggle('on', (x.dataset.r === 'all') === show));
   }
   function _tlNative(){ try{ return !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()); }catch(_){ return false; } }
   function _bindTimelineHeader(feed){
@@ -1036,8 +1037,11 @@ window.PCTimelineFactory = function(dep){
     // Same write as Settings → "Hide replies in timelines" (settings.js), so the two can never disagree
     // and the choice syncs to the account's other devices. Only #tl-notes is redrawn: the header -- and
     // a half-typed post in the composer above it -- stays put.
-    { const rs=$('#tl-replies',feed); if(rs) rs.onclick=()=>{
-        const hide = ClientSettings.get('hideReplies', false) ? false : true;   // the press flips what is stored
+    { const rs=$('#tl-replies',feed); if(rs) rs.onclick=(ev)=>{
+        const was = ClientSettings.get('hideReplies', false);
+        const half = ev && ev.target && ev.target.closest ? ev.target.closest('[data-r]') : null;
+        const hide = half ? half.dataset.r === 'posts' : !was;   // a half picks itself; anywhere else flips
+        if(hide === was) return;
         ClientSettings.set('hideReplies', hide);
         try{ S._prefTouched.add('hideReplies'); }catch(_){}
         saveClientPrefsNostr({ hideReplies: hide });
