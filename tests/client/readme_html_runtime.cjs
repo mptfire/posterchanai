@@ -2,7 +2,7 @@
 /* A README's HTML renders — safely. Runs the SHIPPED mdToHtml (app.js) under node.
  * Reported: "on the ngit posterchan repo, it's showing HTML instead of rendering it". */
 const fs=require('fs'),path=require('path');
-const acorn=require('/opt/flood/node_modules/acorn');
+const acorn=require('./find_acorn.cjs');
 const src=fs.readFileSync(path.join(__dirname,'..','..','static','js','client','app.js'),'utf8');
 const ast=acorn.parse(src,{ecmaVersion:'latest',sourceType:'script',allowReturnOutsideFunction:true});
 const fns={},consts={};

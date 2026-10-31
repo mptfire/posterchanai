@@ -108,7 +108,16 @@ def test_an_unreadable_interface_table_is_not_local(monkeypatch):
     monkeypatch.setattr(media, "_local_networks", (0.0, None))
 
 
-def test_a_forwarded_address_is_trusted_only_from_a_local_peer_or_a_signed_hop():
+def _on_the_home_lan(monkeypatch):
+    """These cases are about a node on 192.168.0.0/24 (the deployment the report came from). Read from the host they
+    passed only on a machine that IS on that subnet -- a GitHub runner is not."""
+    import ipaddress
+    monkeypatch.setattr(media, "_local_networks", (float("inf"), (ipaddress.ip_network("192.168.0.0/24"),
+                                                                   ipaddress.ip_network("127.0.0.0/8"))))
+
+
+def test_a_forwarded_address_is_trusted_only_from_a_local_peer_or_a_signed_hop(monkeypatch):
+    _on_the_home_lan(monkeypatch)
     # The router's nginx overwrites X-Real-IP with the address it saw, and it is itself local.
     assert media.viewer_address("192.168.0.1", real_ip="192.168.0.49") == "192.168.0.49"
     assert media.viewer_address("192.168.0.1", forwarded="192.168.0.49, 10.0.0.1") == "192.168.0.49"
@@ -132,7 +141,8 @@ def test_a_node_hop_that_says_nothing_is_paced_not_exempted():
     assert media.viewer_address("192.168.0.2", relayed="192.168.0.49", internal=True) == "192.168.0.49"
 
 
-def test_the_edge_reads_the_address_the_same_way():
+def test_the_edge_reads_the_address_the_same_way(monkeypatch):
+    _on_the_home_lan(monkeypatch)
     assert routes.client_address(_request("192.168.0.1", {"X-Real-IP": "192.168.0.49"})) == "192.168.0.49"
     assert routes.client_address(_request("69.145.1.133", {"X-Real-IP": "192.168.0.49"})) == "69.145.1.133"
     assert routes.client_address(_request("")) == ""

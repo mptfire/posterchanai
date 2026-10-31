@@ -79,8 +79,10 @@ def test_the_package_lists_are_still_readable():
 
 def test_every_package_exists_in_a_repo_the_installer_enables():
     repos = _repos()
-    if not repos:
-        pytest.skip("no portage tree at /var/db/repos — this needs real distribution data")
+    # The overlay is read from THIS repo, so it is always "there"; what decides is Gentoo's own tree. Without it every
+    # atom outside the overlay reads as missing (a GitHub runner, any non-Gentoo machine).
+    if not (Path("/var/db/repos") / "gentoo").is_dir():
+        pytest.skip("no Gentoo portage tree at /var/db/repos/gentoo — this needs real distribution data")
     missing = []
     for atom in sorted(_packages()):
         category, name = atom.split("/", 1)
@@ -95,8 +97,10 @@ def test_this_check_can_fail():
     """MUTATION: brightnessctl is the real one that shipped. It must still be absent from the tree,
     or this check has quietly stopped being able to detect the thing it was written for."""
     repos = _repos()
-    if not repos:
-        pytest.skip("no portage tree at /var/db/repos — this needs real distribution data")
+    # The overlay is read from THIS repo, so it is always "there"; what decides is Gentoo's own tree. Without it every
+    # atom outside the overlay reads as missing (a GitHub runner, any non-Gentoo machine).
+    if not (Path("/var/db/repos") / "gentoo").is_dir():
+        pytest.skip("no Gentoo portage tree at /var/db/repos/gentoo — this needs real distribution data")
     assert not any((repo / "app-misc" / "brightnessctl").is_dir() for repo in repos), (
         "app-misc/brightnessctl now exists — pick another known-absent atom for this mutation")
 

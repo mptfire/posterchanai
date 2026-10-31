@@ -64,8 +64,13 @@ def _run(tmp_path, selected=None, wayfire_status=0, wayfire_body=None, restartin
     if restarting:
         # What pc-shell-restart leaves behind: a marker whose mtime is the whole signal.
         (runtime / "posterchan-shell-restarting").write_text("")
+    # The session copies its Wayfire config from PC_WAYFIRE_CONFIG (default /etc/wayfire.ini). Read from the host it made
+    # this test depend on the machine running it having Wayfire installed: a GitHub runner has no /etc/wayfire.ini, so
+    # the launcher fell back to it by name and every expected path differed.
+    config = tmp_path / "wayfire.ini"
+    config.write_text("[core]\nplugins = autostart\n")
     env = os.environ | {"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(home),
-                        "XDG_RUNTIME_DIR": str(runtime),
+                        "XDG_RUNTIME_DIR": str(runtime), "PC_WAYFIRE_CONFIG": str(config),
                         "PC_WAYFIRE_HEALTH": str(bindir / "pc-wayfire-health"),
                         "PC_RESCUE_SHELL": str(bindir / "bash")} | _graphics(tmp_path)
     if selected:

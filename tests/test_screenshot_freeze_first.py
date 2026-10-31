@@ -17,6 +17,7 @@ slurp / wlr-randr and a real Pillow crop.
 import json
 import os
 import shutil
+import sys
 import subprocess
 from pathlib import Path
 
@@ -92,7 +93,7 @@ def _js_world(tmp_path, slurp_out="350,60 100x80", slurp_rc=0):
     home.mkdir()
     tmpd.mkdir()
     log = tmp_path / "calls.log"
-    grim = _stub(bin_, "grim", GRIM_PY, shebang="#!/usr/bin/env python3")
+    grim = _stub(bin_, "grim", GRIM_PY, shebang="#!" + sys.executable)   # has Pillow; the host's python3 may not
     slurp = _stub(bin_, "slurp", f'echo slurp >>"{log}"\n' + (f'echo "{slurp_out}"\n' if slurp_rc == 0 else
                                                                    'echo "selection cancelled" >&2\nexit 1\n'))
     env = {"PC_GRIM": str(grim), "PC_SLURP": str(slurp), "HOME": str(home), "TMPDIR": str(tmpd),

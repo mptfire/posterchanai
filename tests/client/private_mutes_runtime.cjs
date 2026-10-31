@@ -6,7 +6,7 @@
  * "replaceable-list shrink guard: 7<21". His newest kind-10000 carries 6 PUBLIC p-tags and a 19 KB
  * ENCRYPTED private section; the guard counted public tags only against an older public list of 21. */
 const fs = require('fs'), path = require('path');
-const acorn = require('/opt/flood/node_modules/acorn');
+const acorn = require('./find_acorn.cjs');
 const src = fs.readFileSync(path.join(__dirname, '..', '..', 'static', 'js', 'client', 'app.js'), 'utf8');
 const ast = acorn.parse(src, { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true });
 const found = {};

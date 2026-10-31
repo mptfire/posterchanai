@@ -3,7 +3,7 @@
  * Reported: "why is so much of my balance always locked???? that last transaction was half an hour
  * ago". Runs the SHIPPED meWalletHtml from monero-wallet.js. */
 const fs=require('fs'),path=require('path');
-const acorn=require('/opt/flood/node_modules/acorn');
+const acorn=require('./find_acorn.cjs');
 const src=fs.readFileSync(path.join(__dirname,'..','..','static','js','client','monero-wallet.js'),'utf8');
 const ast=acorn.parse(src,{ecmaVersion:'latest',sourceType:'script',allowReturnOutsideFunction:true});
 let fn=null; const consts=[];

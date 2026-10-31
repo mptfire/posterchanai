@@ -49,7 +49,10 @@ class Power(unittest.TestCase):
         js = "const P = require(%s);\n(async () => { const out = {};\ntry { %s }\n" \
              "catch(e){ out.threw = String(e.message || e); }\n" \
              "process.stdout.write(JSON.stringify(out)); })();" % (json.dumps(POWER), body)
-        env = dict(os.environ, PC_SYSFS=self.sys, PATH="/nonexistent:" + os.environ["PATH"])
+        swaps = os.path.join(self.sys, "proc-swaps")       # a machine with NO swap, not whatever the host has
+        if not os.path.exists(swaps):
+            open(swaps, "w").write("Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n")
+        env = dict(os.environ, PC_SYSFS=self.sys, PC_PROC_SWAPS=swaps, PATH="/nonexistent:" + os.environ["PATH"])
         r = subprocess.run([NODE, "-e", js], capture_output=True, text=True, timeout=60, env=env)
         self.assertEqual(r.returncode, 0, r.stderr[-800:])
         return json.loads(r.stdout)
@@ -107,8 +110,8 @@ class Power(unittest.TestCase):
         """Offering the button on a machine with nowhere to write the image is offering a button
         that returns an error."""
         out = self.run_js("try { await P.hibernate(); out.ok = true; } catch(e){ out.threw = e.message; }")
-        if not out.get("ok"):          # this box may genuinely have swap
-            self.assertIn("swap", out.get("threw", ""))
+        self.assertFalse(out.get("ok"), "hibernate went ahead on a machine with no swap")
+        self.assertIn("swap", out.get("threw", ""))
 
     def test_hibernation_setup_is_exposed_without_an_invisible_password_prompt(self):
         src = open(os.path.join(ROOT, "desktop", "power.js"), encoding="utf-8").read()

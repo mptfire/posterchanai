@@ -29,6 +29,8 @@ jobs:
         part: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # the Android signing-history guard reads the whole history
 
       - uses: actions/setup-node@v4
         with:
@@ -57,12 +59,26 @@ jobs:
           for attempt in 1 2 3; do
             if sudo apt-get "${APT_OPTS[@]}" update -qq \
                && sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends ffmpeg xvfb squashfs-tools \
-                    fonts-noto-color-emoji libgtk-3-0t64 libnss3 libgbm1 libasound2t64 pulseaudio pulseaudio-utils; then
-              exit 0
+                    fonts-noto-color-emoji fonts-liberation libgtk-3-0t64 libnss3 libgbm1 libasound2t64 pulseaudio pulseaudio-utils; then
+              break
             fi
             sleep $((attempt * 20))
+            [ "$attempt" = 3 ] && exit 1
           done
-          exit 1
+
+      # THE MACHINE THE SUITE WAS WRITTEN AGAINST: what server1 and every PosterChanOS box have and a stock runner does
+      # not. bash as /bin/sh (Gentoo's; dash cannot do the multi-digit fd redirections the shell scripts use), node in
+      # /usr/bin (tests that pin PATH=/usr/bin:/bin), the app's state directory, Liberation Sans as the default sans
+      # (layout checks measure text), and acorn for the tests that parse the shipped client.
+      - name: Match the target machine
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo ln -sf bash /bin/sh
+          sudo ln -sf "$(command -v node)" /usr/bin/node
+          sudo mkdir -p /var/lib/posterchanai && sudo chown "$USER" /var/lib/posterchanai
+          npm install --no-save --no-package-lock acorn@8
+          fc-match sans-serif
 
       - name: LiveKit for the call tests
         timeout-minutes: 5
@@ -86,7 +102,10 @@ jobs:
         run: |
           set -euo pipefail
           python -m venv venv-unified
-          venv-unified/bin/pip install -r requirements-nostr.txt -r requirements-test.txt -r scripts/deploy-regression-requirements.txt
+          venv-unified/bin/pip install -r requirements-nostr.txt -r requirements-test.txt -r scripts/deploy-regression-requirements.txt \
+            -r requirements-exodus-xrp.txt huggingface_hub
+          # torch for the image-generation code paths the tests drive with stubs (no GPU needed): the CPU wheel.
+          venv-unified/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Tests, part ${{ matrix.part }} of 8
         timeout-minutes: 60
