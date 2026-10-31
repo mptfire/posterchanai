@@ -8177,7 +8177,23 @@ body.os-on .osw-body > .feed::-webkit-scrollbar-thumb:hover{background:var(--mut
   border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
 .os-hibernate>div{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}
 .os-hibernate span{color:var(--muted);font-size:12px}.os-hibernate .os-set-ready{color:#5dffb0}
+/* The phone's tab DROPDOWN (term.js _paintSessions): hidden wherever the tabs fit. */
+.tty-pick,.tty-pick-kill{display:none}
+.tty-pick{position:relative;align-items:center;flex:1 1 auto;min-width:0;max-width:280px}
+.tty-pick select{appearance:none;-webkit-appearance:none;width:100%;min-width:0;height:32px;padding:0 28px 0 10px;border:1px solid var(--line);
+  border-radius:8px;background:var(--panel);color:var(--text);font:inherit;font-size:13px;font-weight:600;text-overflow:ellipsis;cursor:pointer}
+.tty-pick select:focus-visible{outline:2px solid var(--neon);outline-offset:1px}
+.tty-pick select option{background:var(--bg);color:var(--text)}
+.tty-pick-caret{position:absolute;inset-inline-end:8px;width:15px;height:15px;color:var(--neon);pointer-events:none}
+.tty-pick-kill{flex:0 0 auto;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);
+  font-size:18px;line-height:1;cursor:pointer}
+.tty-pick-kill:hover{color:var(--danger,#ff6b8b);background:rgba(var(--accent-rgb),.10)}
+@media(min-width:821px){.tty-menu .tty-phone-only{display:none}}
 @media(max-width:820px){
+  .tty-sessions .tty-sess{display:none}
+  .tty-tools #tty-font-less,.tty-tools #tty-font-more{display:none}
+  .tty-pick{display:flex}.tty-pick-kill{display:block}
+  .tty-sessions{overflow:visible}
   .tty-bar{height:40px}
   .tty-ib,.tty-tab-new,.tty-sess{height:32px}
   .tty-ib{width:32px}

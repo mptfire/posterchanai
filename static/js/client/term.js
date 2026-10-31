@@ -396,6 +396,8 @@
           <div class="tty-menu tty-menu-end" id="tty-more-menu" role="menu" aria-label="Terminal actions" hidden>
             <button class="hidden" id="tty-stop" role="menuitem" title="Leave it running">Detach<small>leave it running</small></button>
             <button class="hidden tty-kill" id="tty-kill" role="menuitem" title="End this session">Kill session<small>stops what runs in it</small></button>
+            <button class="tty-phone-only" id="tty-more-font-more" role="menuitem">Larger text</button>
+            <button class="tty-phone-only" id="tty-more-font-less" role="menuitem">Smaller text</button>
             <button id="tty-more-font-reset" role="menuitem">Reset text size</button>
           </div>
         </div>
@@ -1714,7 +1716,17 @@
           -(rank.has(String(b.sid))?rank.get(String(b.sid)):1e9));
       }
       box.hidden = false;
-      box.innerHTML = tabs.map((x, n) => {
+      /* ON A PHONE THE TABS ARE A DROPDOWN ("terminal tabs are terrible on mobile ... tabs dont fit", 2026-10-31):
+       * a <select> of the same shells (Android's own chooser, nothing to scroll sideways), the current one's × beside
+       * it, then the same +. Both forms are in the markup and CSS picks by width, so rotating never re-renders.
+       * Options carry data-sid, NOT data-tab: _cycleTab walks [data-tab] and must not count each shell twice. */
+      const cur0 = tabs.find(x => x.sid === sid);
+      box.innerHTML = '<label class="tty-pick" title="Choose a terminal"><select id="tty-tab-select" aria-label="Terminal">'
+        + tabs.map((x, n) => `<option value="${enc(x.sid)}" data-sid="${enc(x.sid)}" data-host="${enc(x.host || '')}" data-label="${enc(String(x.label || ''))}"${x.sid === sid ? ' selected' : ''}>${enc(_tabName(x, n))}</option>`).join('')
+        + (cur0 ? '' : '<option value="" selected>No terminal open</option>')
+        + '</select><svg class="ic tty-pick-caret" aria-hidden="true"><use href="#i-chevron-down"></use></svg></label>'
+        + (cur0 ? `<button data-kill="${enc(cur0.sid)}" class="tty-pick-kill" title="Close this terminal (ends the shell)" aria-label="Close this terminal">×</button>` : '')
+        + tabs.map((x, n) => {
         const lab = String(x.label || '');
         const nm = _tabName(x, n);
         const kind = isLocalSid(x.sid) ? 'local' : 'ssh';
@@ -1945,6 +1957,9 @@
       { const b = $('#tty-find'); if(b) b.onclick = _findOpen; }
       { const b = $('#tty-font-less'); if(b) b.onclick = () => _changeFont(-1); }
       { const b = $('#tty-font-more'); if(b) b.onclick = () => _changeFont(1); }
+      // A phone has no room for A−/A+ beside the tab dropdown, so they live in ⋯ there (CSS picks by width).
+      { const b = $('#tty-more-font-more'); if(b) b.onclick = () => { _menuClose(); _changeFont(1); }; }
+      { const b = $('#tty-more-font-less'); if(b) b.onclick = () => { _menuClose(); _changeFont(-1); }; }
       { const b = $('#tty-find-prev'); if(b) b.onclick = () => _findMove(-1); }
       { const b = $('#tty-find-next'); if(b) b.onclick = () => _findMove(1); }
       { const b = $('#tty-find-close'); if(b) b.onclick = _findClose; }
@@ -1959,7 +1974,11 @@
           const k = ev.target.closest('[data-kill]'); if(k){ ev.stopPropagation(); return kill(k.dataset.kill); }
           const add = ev.target.closest('#tty-tab-new'); if(add){ ev.stopPropagation(); return _menuOpen('#tty-new-menu', add); }
           const a = ev.target.closest('[data-tab]');
-          if(a && a.dataset.tab !== (cur && cur.sid)) return _selectTab(a.dataset.tab, a.dataset.host, a.dataset.label); }; }
+          if(a && a.dataset.tab !== (cur && cur.sid)) return _selectTab(a.dataset.tab, a.dataset.host, a.dataset.label); };
+        if(box) box.onchange = (ev) => {
+          const sel = ev.target.closest('#tty-tab-select'); if(!sel) return;
+          const o = sel.selectedOptions && sel.selectedOptions[0];
+          if(o && o.dataset.sid && o.dataset.sid !== (cur && cur.sid)) _selectTab(o.dataset.sid, o.dataset.host, o.dataset.label); }; }
       { const k = $('#tty-keys'); if(k) k.onclick = (ev) => {
           const b = ev.target.closest('[data-k]'); if(!b) return;
           ev.preventDefault(); _key(b.dataset.k); }; }

@@ -69,7 +69,10 @@ PAGE = """<!doctype html><meta charset="utf-8">
    * thing that can push the screen off the bottom of a 320px phone. The menus are closed, as they
    * are on screen: an open one is an overlay, not part of the bar's row. */
   const ss = document.getElementById('tty-sessions');
-  ss.innerHTML = ['local · #1','server1','nas · 2','a-rather-long-host-name · user@there: ~/src'].map((h, i) =>
+  const names = ['local · #1','server1','nas · 2','a-rather-long-host-name · user@there: ~/src'];
+  // The phone's dropdown + its × come first, as _paintSessions renders them (CSS shows them or the tabs by width).
+  ss.innerHTML = '<label class="tty-pick"><select id="tty-tab-select">' + names.map(h => '<option>' + h + '</option>').join('') +
+      '</select></label><button class="tty-pick-kill">×</button>' + names.map((h, i) =>
       '<span class="tty-sess tty-tab tty-ssh' + (i ? '' : ' active') + '"><i class="tty-dot"></i><b>' + h + '</b>' +
       '<button class="tty-kill">×</button></span>').join('') +
     '<button class="tty-tab-new" id="tty-tab-new">+</button>';
@@ -116,7 +119,8 @@ PAGE = """<!doctype html><meta charset="utf-8">
   // never widen the page (which would let the whole app scroll horizontally on a phone).
   const sr = ss.getBoundingClientRect();
   out.sessH = Math.round(sr.height);
-  out.sessClip = [...ss.querySelectorAll('.tty-sess')].reduce((n, el) => {
+  out.sessClip = [...ss.querySelectorAll('.tty-sess')].filter(vis).reduce(   // a phone draws a dropdown instead
+   (n, el) => {
     const r = el.getBoundingClientRect();
     return n + ((r.top < sr.top - 0.5 || r.bottom > sr.bottom + 0.5) ? 1 : 0); }, 0);
   out.hOverflow = document.documentElement.scrollWidth > window.innerWidth + 1;
