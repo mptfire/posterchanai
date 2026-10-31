@@ -4220,7 +4220,7 @@
    * had learned it was tombstoned — and `recoveredOwnedInvites` then made that decision final for
    * the session. Hold the item instead and replay it once this account's vault has actually been
    * decoded. Nothing is lost: an announcement is not membership, so waiting costs a repaint. */
-  let membershipReadFor='';
+  let membershipReadFor='', membershipRecovery={who:'',at:0};
   const pendingOwnedInvites=[];
   function flushOwnedInvites(p){
     const queued=pendingOwnedInvites.splice(0,pendingOwnedInvites.length);
@@ -4940,7 +4940,11 @@
        * source — cache, own relay and, on the first pass, the compatibility relays — agreed this
        * account has published no vault, which is a real answer. Anything else leaves owned-invite
        * recovery held, and holding it only costs a community the invite link can restore. */
-      if(viewer.pubkey&&(recovered||vaultEmpty)){membershipReadFor=viewer.pubkey;flushOwnedInvites(p);void refreshInviteCount();backgroundRender();}
+      /* REPAINT ONLY WHAT THIS ANSWER CHANGED (Vyram eaeb13f1, "channel switching still has a delay"). This repainted on
+       * EVERY completed sync, and render() starts a recovery sync, so each render scheduled another: a channel press
+       * paid for two full rebuilds and an open room redrew itself for as long as it was open. A room list that changed
+       * repaints above (`changed`); here it is only the FIRST answer for this account that has something to show. */
+      if(viewer.pubkey&&(recovered||vaultEmpty)){const first=membershipReadFor!==viewer.pubkey;membershipReadFor=viewer.pubkey;flushOwnedInvites(p);void refreshInviteCount();if(first)backgroundRender();}
       membershipBusy=false;
       // Native desktop starts with an empty origin and relays may not be connected on first paint.
       // Retry a failed/empty recovery instead of permanently hiding the user's Armada rooms.
@@ -7148,7 +7152,11 @@
       /* One bounded cross-relay recovery is required even with a selected room: membership shards
          are distributed and the local relay may hold only the newest subset. This is not public
          listing discovery and schedules no active-room retry. */
-      syncArmadaMemberships(p,viewer,'recovery');syncNip29Memberships(p,viewer,true);void mirrorAllJoined(p);
+      /* ...bounded means ONCE A MINUTE PER ACCOUNT, not once per render: render() runs on every channel press and
+       * every live message, and each pass was a cross-relay read plus (before the fix above) another full render. */
+      const now=Date.now();
+      if(membershipRecovery.who!==viewer.pubkey||now-membershipRecovery.at>60000){membershipRecovery={who:viewer.pubkey,at:now};syncArmadaMemberships(p,viewer,'recovery');}
+      syncNip29Memberships(p,viewer,true);void mirrorAllJoined(p);
       stopDiscovery();
       clearTimeout(membershipRetryTimer);membershipRetryTimer=null;
       clearTimeout(nip29RetryTimer);nip29RetryTimer=null;

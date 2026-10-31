@@ -79,7 +79,8 @@ def test_an_announcement_waits_for_the_vault_to_be_read():
     assert recover.index("membershipReadFor!==viewer.pubkey") < recover.index("recoveredOwnedInvites.add"), (
         "the session-final mark is taken before the vault has been read"
     )
-    assert "if(viewer.pubkey&&(recovered||vaultEmpty)){membershipReadFor=viewer.pubkey;flushOwnedInvites(p);" in SRC, (
+    latch = SRC.split("if(viewer.pubkey&&(recovered||vaultEmpty)){", 1)[1].split("}", 1)[0] if "if(viewer.pubkey&&(recovered||vaultEmpty)){" in SRC else ""
+    assert "membershipReadFor=viewer.pubkey;" in latch and "flushOwnedInvites(p);" in latch, (
         "'a document was opened' is the only honest latch — candidates that decoded nothing means "
         "'could not open', never 'there is nothing there'"
     )
