@@ -59,7 +59,7 @@ jobs:
           for attempt in 1 2 3; do
             if sudo apt-get "${APT_OPTS[@]}" update -qq \
                && sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends ffmpeg xvfb squashfs-tools \
-                    fonts-noto-color-emoji fonts-liberation parted cryptsetup btrfs-progs dosfstools libgtk-3-0t64 libnss3 libgbm1 libasound2t64 pulseaudio pulseaudio-utils; then
+                    fonts-noto-color-emoji fonts-liberation parted cryptsetup btrfs-progs dosfstools python3-pil libgtk-3-0t64 libnss3 libgbm1 libasound2t64 pulseaudio pulseaudio-utils; then
               break
             fi
             sleep $((attempt * 20))
@@ -89,13 +89,10 @@ jobs:
           fc-cache -f >/dev/null
           echo "sans-serif is now: $(fc-match sans-serif)"
           test "$(fc-match -f '%{family}' sans-serif)" = "Liberation Sans"
-          # A CURRENT ffmpeg, as the nodes run (server1: 8.x). Ubuntu's 6.1 joins a reconnected stream's recordings into
-          # half a VOD -- tracked as its own bug (task: VOD join on older ffmpeg), not something to learn here by accident.
+          # A current ffmpeg for the TEST'S stand-in OBS publisher only (PC_TEST_PUBLISH_FFMPEG); the app keeps Ubuntu's.
           curl -fsSL --retry 5 https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o "$RUNNER_TEMP/ff.txz"
           mkdir -p "$RUNNER_TEMP/ff" && tar -xJf "$RUNNER_TEMP/ff.txz" -C "$RUNNER_TEMP/ff" --strip-components=1
-          sudo install -m 0755 "$RUNNER_TEMP/ff/ffmpeg" "$RUNNER_TEMP/ff/ffprobe" /usr/local/bin/
-          sudo ln -sf /usr/local/bin/ffmpeg /usr/bin/ffmpeg && sudo ln -sf /usr/local/bin/ffprobe /usr/bin/ffprobe
-          ffmpeg -version | head -1
+          echo "PC_TEST_PUBLISH_FFMPEG=$RUNNER_TEMP/ff/ffmpeg" >> "$GITHUB_ENV"
 
       - name: LiveKit for the call tests
         timeout-minutes: 5

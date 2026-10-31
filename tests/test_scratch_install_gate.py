@@ -254,7 +254,7 @@ def test_the_tool_check_cannot_read_its_own_echo_as_an_answer():
     command = eval("(" + expr + ")",  # noqa: S307 - our own source, wrapped so it spans lines
                    {"LIVE_TOOLS": MOD.LIVE_TOOLS})
     answer = subprocess.run(["bash", "-c", command], capture_output=True, text=True,
-                            env={"PATH": "/usr/bin:/bin"}).stdout
+                            env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin"}).stdout   # parted/mkfs live in sbin on most distros
     transcript = "root@livecd ~ # " + command + "\r\n" + answer
     found = re.findall(r"PCTOOLS:\[([^\]]*)\]", transcript)
     assert len(found) == 2, f"the echoed command and its answer both carry the marker: {found}"

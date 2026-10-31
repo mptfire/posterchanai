@@ -538,7 +538,10 @@ def test_mediamtx_refuses_forged_and_borrowed_keys(ran):
 def _rtmp_publish_av(S, path, query, seconds):
     """OBS-shaped: a moving test pattern AND a 440 Hz tone (H.264 + AAC) over RTMP for `seconds`."""
     url = 'rtmp://127.0.0.1:%d/%s%s' % (S.ctx.mtx.port('rtmp'), path, ('?' + query) if query else '')
-    p = subprocess.Popen(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-re',
+    # The PUBLISHER stands in for OBS. An ffmpeg 6 publisher's reconnect is recorded by MediaMTX as one session file
+    # (measured 2026-10-31: the app's own join is fine on ffmpeg 6 -- FFMPEG_BINARY=6.0 passes), so a machine whose
+    # ffmpeg is older (a GitHub runner) names a current one here; the app keeps using its own.
+    p = subprocess.Popen([os.environ.get('PC_TEST_PUBLISH_FFMPEG') or 'ffmpeg', '-hide_banner', '-loglevel', 'error', '-re',
                           '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=15',
                           '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100',
                           '-t', str(seconds), '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
