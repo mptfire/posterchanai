@@ -17,6 +17,9 @@
   "dependencies": {
     "electron-updater": "^6.3.9"
   },
+  "optionalDependencies": {
+    "node-pty": "1.1.0"
+  },
   "devDependencies": {
     "electron": "44.7.0",
     "electron-builder": "^26.15.3"
@@ -29,10 +32,15 @@
     "productName": "PosterChan",
     "copyright": "PosterChan",
     "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["*.js", "*.html", "icon.png", "package.json", "www/**/*"],
+    "files": ["*.js", "*.html", "icon.png", "package.json", "www/**/*",
+      "!**/node_modules/node-pty/{deps,third_party,src,scripts,typings}/**",
+      "!**/node_modules/node-pty/prebuilds/**/*.pdb"],
+    "asarUnpack": ["**/node_modules/node-pty/**"],
+    "npmRebuild": false,
     "extraResources": [{ "from": "resources/tor", "to": "tor" }],
     "win": {
       "icon": "build/icon.png",
+      "files": ["!**/node_modules/node-pty/prebuilds/{darwin-*,win32-arm64}/**"],
       "target": [{ "target": "nsis", "arch": ["x64"] }]
     },
     "nsis": {
@@ -49,6 +57,7 @@
     "mac": {
       "icon": "build/icon.png",
       "category": "public.app-category.social-networking",
+      "files": ["!**/node_modules/node-pty/prebuilds/win32-*/**"],
       "identity": null,
       "extendInfo": {
         "NSCameraUsageDescription": "PosterChan uses your camera for video calls and live streams.",
@@ -60,6 +69,7 @@
     "linux": {
       "icon": "build/icon.png",
       "category": "Network",
+      "files": ["!**/node_modules/node-pty/**"],
       "syncDesktopName": true,
       "synopsis": "PosterChan — Nostr client, chat and media",
       "target": [{ "target": "AppImage", "arch": ["x64"] }],

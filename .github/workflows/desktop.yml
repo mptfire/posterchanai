@@ -225,6 +225,16 @@ jobs:
           echo "::error::npm ci failed three times"
           exit 1
 
+      # THE LOCAL TERMINAL, STARTED FOR REAL ON WINDOWS AND MACOS (2026-10-31, "that shell has exited"). Linux runs its
+      # path in the regression gate; these two use node-pty (ConPTY on Windows), which nothing else here executes. Types
+      # a command into a real shell through desktop/localterm.js and requires its output back, before anything ships.
+      - name: Local terminal works on this OS
+        if: matrix.name != 'linux'
+        working-directory: desktop
+        shell: bash
+        timeout-minutes: 3
+        run: node scripts/terminal-smoke.js
+
       # A real sendSync assignment sends the reply immediately. A plain JS event stub
       # cannot detect a premature null reply that turns an app reload into a desktop.
       # ITS OWN STEP, WITH RETRIES AND DOWNLOAD TIMEOUTS. This used to be the first thing the 15-minute

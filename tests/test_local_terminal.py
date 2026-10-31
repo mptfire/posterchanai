@@ -274,8 +274,12 @@ class LocalTerminal(unittest.TestCase):
         with open(MOD, encoding="utf-8") as fh:
             src = fh.read()
         reqs = re.findall(r"require\(\s*['\"]([^'\"]+)['\"]", src)
-        self.assertEqual([r for r in reqs if not r.startswith((".", "/"))],
-                         ["child_process", "fs"], reqs)
+        # Windows and macOS have no `script`/procfs and use node-pty (2026-10-31); the LINUX path still loads
+        # nothing compiled: the only native require sits behind a linux early return (test_desktop_terminal_windows).
+        self.assertEqual(sorted(r for r in reqs if not r.startswith((".", "/"))),
+                         ["child_process", "events", "fs", "node-pty"], reqs)
+        guard = src.split("function ptyModule", 1)[1].split("\n}", 1)[0]
+        self.assertLess(guard.index("=== 'linux') return null"), guard.index("require('node-pty')"))
 
 
 if __name__ == "__main__":

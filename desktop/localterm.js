@@ -31,12 +31,59 @@ let nextId = 1;
  * `yes` left running is otherwise a memory leak with a cursor. */
 const MAX_BUF = 256 * 1024;
 
+/* WINDOWS AND MACOS GET A REAL PTY FROM node-pty ("any way to make our terminal app work on the windows app?"
+ * -> "that shell has exited", 2026-10-31). Everything below this comment is util-linux `script` + /proc + `stty -F`,
+ * none of which exists on Windows (no bash, no script) or macOS (BSD `script` takes different arguments; no /proc),
+ * so the shell died the instant it started. node-pty 1.1 ships N-API prebuilds for win32 (ConPTY) and darwin, which
+ * load in any Electron without a rebuild; Linux keeps the no-native-module path above, which it was built for (one
+ * AppImage, PosterChanOS). Loaded lazily and optional: a build without it falls back to the old path and says why. */
+let _pty;
+function ptyModule(platform) {
+  if ((platform || process.platform) === 'linux') return null;
+  if (_pty === undefined) { try { _pty = require('node-pty'); } catch (_) { _pty = null; } }
+  return _pty;
+}
+/** The shell to start where there is no $SHELL convention: PowerShell on Windows (what its own terminal opens),
+ *  the login shell on macOS. Pure, so tests/test_desktop_terminal_windows.py runs it. */
+function nativeShell(platform, env) {
+  const e = env || {};
+  if (platform === 'win32') {
+    const root = e.SystemRoot || e.SYSTEMROOT || 'C:\\Windows';
+    return { file: root + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', args: ['-NoLogo'] };
+  }
+  return { file: e.SHELL || '/bin/zsh', args: ['-l'] };
+}
+/* A node-pty terminal dressed as the child_process the rest of this file already drives: stdout `data`, `exit`,
+ * stdin.write and kill -- plus the one thing a pipe cannot do, resize, which it does with no `stty`. */
+function ptyProc(pty, o, cols, rows, platform) {
+  const EventEmitter = require('events');
+  const sh = nativeShell(platform, process.env);
+  const term = pty.spawn(sh.file, sh.args, {
+    name: 'xterm-256color', cols, rows,
+    cwd: o.cwd || process.env.USERPROFILE || process.env.HOME || undefined,
+    env: Object.assign({}, process.env, { TERM: 'xterm-256color', COLORTERM: 'truecolor' }),
+    useConpty: true,
+  });
+  const out = new EventEmitter(); out.setEncoding = () => {};
+  const err = new EventEmitter(); err.setEncoding = () => {};
+  const proc = new EventEmitter();
+  Object.assign(proc, { pid: term.pid, stdout: out, stderr: err, pty: term,
+    stdin: { write: (d) => term.write(d) },
+    kill: () => { try { term.kill(); } catch (_) {} } });
+  term.onData((d) => out.emit('data', d));
+  term.onExit(({ exitCode }) => proc.emit('exit', exitCode));
+  return proc;
+}
+
 function start(opts) {
   if (sessions.size >= MAX_SESSIONS) throw new Error('too many terminals open');
   const o = opts || {};
   const shell = process.env.SHELL || '/bin/bash';
   const cols = Math.max(20, Math.min(500, Number(o.cols) || 80));
   const rows = Math.max(5, Math.min(200, Number(o.rows) || 24));
+  const pty = ptyModule();
+  if (!pty && process.platform !== 'linux')
+    throw new Error('the terminal needs node-pty on ' + process.platform + ' and this build does not include it');
   /* `stty` inside the pty is how the size is set: `script` gives a PTY but no way to resize it from
    * outside, and a shell that thinks it is 80x24 on a 1920px screen wraps every long line in the
    * wrong place. Set at start and again on every resize. */
@@ -63,7 +110,7 @@ function start(opts) {
     'case "$__n" in \'\'|*[!0-9]*) continue;; esac; ' +
     '[ "$__n" -le 2 ] || eval "exec $__n>&-"; done; unset __fd __n';
   const cmd = `stty cols ${cols} rows ${rows} 2>/dev/null; exec "$SHELL" -l`;
-  const proc = spawn('/bin/bash', ['-c', `${closeInherited}; exec "$@"`,
+  const proc = pty ? ptyProc(pty, o, cols, rows, process.platform) : spawn('/bin/bash', ['-c', `${closeInherited}; exec "$@"`,
     'posterchan-terminal', 'script', '-qfc', cmd, '/dev/null'], {
     cwd: o.cwd || process.env.HOME || '/',
     /* COLORTERM, because the far end of this PTY is xterm.js and xterm.js does 24-bit colour. It is
@@ -172,6 +219,7 @@ function resize(id, cols, rows) {
    * user was typing, executed it as a command, and made multiple terminals collide. `stty -F`
    * performs the same TIOCSWINSZ ioctl without touching the interactive byte stream. */
   s.wantCols = c; s.wantRows = r;
+  if (s.proc.pty) { try { s.proc.pty.resize(c, r); } catch (_) {} return { ok: true, cols: c, rows: r }; }
   applySize(s, c, r, 0);
   return { ok: true, cols: c, rows: r };
 }
@@ -212,4 +260,4 @@ const list = () => [...sessions.values()].map(s => ({
 /** Every shell dies with the app: a session outliving the desktop is a process nobody can reach. */
 const closeAll = () => { for (const id of [...sessions.keys()]) close(id); };
 
-module.exports = { start, write, resize, backlog, subscribe, close, list, closeAll, MAX_SESSIONS };
+module.exports = { start, write, resize, backlog, subscribe, close, list, closeAll, MAX_SESSIONS, nativeShell, ptyModule };
