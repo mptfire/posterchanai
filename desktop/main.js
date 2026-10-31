@@ -611,9 +611,20 @@ function wirePlainUserAgent() {
  *
  * The wrapper still exports ELECTRON_OZONE_PLATFORM_HINT; this is the half that cannot be lost
  * between a .desktop file, an AppRun and a shell script. */
+/* ...BUT ONLY WHERE WAYLAND IS NEEDED (2026-10-31: "Fine on Cinnamon with XLibre. Not so much Wayland" -- Cinnamon's
+ * Wayland session, i.e. Muffin/Mutter). `auto` moved the AppImage onto native Wayland on EVERY Linux desktop, where
+ * Electron and every other Electron app use X11 through XWayland -- the path that works there. So the hint is given
+ * where it is required: PosterChanOS's shell (which also passes --ozone-platform=wayland itself), and a Wayland session
+ * with no X server to fall back to (DISPLAY unset), where X11 would exit instead of drawing. An explicit
+ * --ozone-platform on the command line still decides. Pure, so tests/test_desktop_ozone_choice.py runs it. */
+function wantsWaylandHint(env, shell) {
+  const e = env || {};
+  if (shell) return true;
+  return !!e.WAYLAND_DISPLAY && !e.DISPLAY;
+}
 function wireOzonePlatform() {
   if (process.platform !== 'linux') return;
-  app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+  if (wantsWaylandHint(process.env, SHELL_MODE)) app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
 }
 
 // Wayland has no X11-style screen grab: capture goes through the xdg-desktop-portal/PipeWire path,
