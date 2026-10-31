@@ -1698,8 +1698,12 @@ async def _main(cfg: dict, store: RelayStore | None = None) -> None:
                             gate.set_blocked(cfg["blocked_pubkeys"])
                             gate.set_operator(cfg["operator"])              # gate CAN shrink (revoke removed operators)
                             store.extend_preserve_pubkeys(cfg["preserve"])  # preserve is grow-only (keeps pinned)
-                            # Re-mark bridged accounts in the live gate (load_from_store doesn't keep them).
-                            asyncio.create_task(_safe(_rescan_bridges(store, gate, cfg, frozenset())))
+                            # Re-mark bridged accounts in the live gate (load_from_store doesn't keep them) -- and DROP the
+                            # marks the new list no longer finds. This passed an empty seed, so a domain taken OFF the
+                            # list left every account it had marked blocked until the relay restarted (2026-10-31:
+                            # bchnostr.com removed, Mr.MuHash still "blocked"). The live marks ARE the seed, exactly
+                            # as the saved ones are at start.
+                            asyncio.create_task(_safe(_rescan_bridges(store, gate, cfg, frozenset(gate.bridged()))))
                             logger.info("[nostr-relay] control: reloaded %d blocked, %d bridge, %d operator key(s)",
                                         len(cfg["blocked_pubkeys"]), len(cfg["blocked_relays"]), len(cfg["operator"]))
                         except Exception as e:

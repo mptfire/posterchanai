@@ -110,3 +110,24 @@ def test_listening_is_declared_right_after_serve():
     src = inspect.getsource(relay_thread._main)
     after = src[src.index("ws = await serve("):]
     assert after.index('_listening["on"] = True') < after.index("_rescan_bridges(")
+
+
+def test_a_domain_taken_off_the_list_unblocks_its_accounts_without_a_restart():
+    """2026-10-31: bchnostr.com was removed from the blocked bridges/relays list and its accounts stayed blocked: the
+    live reload rescanned with an EMPTY seed, so it could only ever ADD marks. A live reload hands the rescan the marks
+    the gate holds, and the rescan drops the ones the new list no longer finds -- what a restart already did."""
+    async def body():
+        st = _Store(ident=[])                       # the new list (bchnostr.com gone) finds nobody
+        g = _gate()
+        g.mark_bridged_identity(A)                  # marked live while bchnostr.com was on the list
+        assert g.is_blocked(A)
+        await relay_thread._rescan_bridges(st, g, {"blocked_relays": ["mostr.pub"]}, frozenset(g.bridged()))
+        assert not g.is_blocked(A), "a domain taken off the list kept its accounts blocked"
+    asyncio.run(body())
+
+
+def test_the_live_reload_seeds_the_rescan_with_the_gates_own_marks():
+    src = inspect.getsource(relay_thread)
+    reload = src.split("control: reloaded", 1)[0].rsplit("gate.set_blocked(cfg[\"blocked_pubkeys\"])", 1)[1]
+    assert "_rescan_bridges(store, gate, cfg, frozenset(gate.bridged()))" in reload, (
+        "the live reload rescans without the current marks, so removing a domain changes nothing until a restart")
