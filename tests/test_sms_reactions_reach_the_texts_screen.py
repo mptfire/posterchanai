@@ -36,9 +36,14 @@ class TheModuleReachesTheScreen(unittest.TestCase):
     def test_it_is_loaded_by_every_shell_that_loads_the_texts_screen(self):
         """A module wired to nothing is the bug. Both shells that ship sms.js must ship this too,
         and BEFORE it — sms.js reads `window.PCSmsReactions` while painting."""
-        for page in ("templates/client.html",
-                     "mobile/android/app/src/main/assets/public/index.html"):
-            html = (ROOT / page).read_text(encoding="utf-8")
+        # The APK's page is a BUILD OUTPUT (gitignored): mobile/build-www.sh renders it with scripts/client_shell.py.
+        # Rendered here the same way -- reading a leftover copy tested whatever was last built (here: Oct 24), and a
+        # clean checkout (GitHub Actions) has none at all.
+        import subprocess, sys
+        apk = subprocess.run([sys.executable, str(ROOT / "scripts/client_shell.py"), str(ROOT)],
+                             capture_output=True, text=True, timeout=60, check=True).stdout
+        for page, html in (("templates/client.html", (ROOT / "templates/client.html").read_text(encoding="utf-8")),
+                           ("the APK's index.html (scripts/client_shell.py)", apk)):
             self.assertIn("sms-reactions.js", html, page)
             self.assertLess(html.index("sms-reactions.js"), html.index("client/sms.js"),
                             page + ": sms.js loads before the module it uses")

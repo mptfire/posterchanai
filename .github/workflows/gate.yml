@@ -96,9 +96,16 @@ jobs:
         run: |
           set -euo pipefail
           test -x /opt/google/chrome/chrome
-          xvfb-run -a venv-unified/bin/python scripts/deploy_regression_gate.py --part ${{ matrix.part }}/8 --jobs 4
+          xvfb-run -a venv-unified/bin/python scripts/deploy_regression_gate.py --part ${{ matrix.part }}/8 --jobs 4 2>&1 | tee "$RUNNER_TEMP/gate.out"
 
-      - name: Failure details
+      # The gate's summary names the failing tests; this re-runs exactly those, alone, with their full errors -- so a
+      # red run says WHY in its own log instead of on a runner that is gone.
+      - name: Why it failed
         if: failure()
         shell: bash
-        run: ls -1 ~/.cache/posterchanai/flaky 2>/dev/null | tail -20 || true
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+        run: |
+          ids=$(awk '/failing in the full suite/{f=1;next} f&&/^  tests\//{print $1} f&&!/^  /{f=0}' "$RUNNER_TEMP/gate.out" | head -20)
+          [ -n "$ids" ] || exit 0
+          xvfb-run -a venv-unified/bin/python -m pytest -q -p no:cacheprovider -rfE --tb=short $ids || true
