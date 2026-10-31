@@ -3075,13 +3075,15 @@ def _preview_from_html(html: str, url: str, target: str, host: str) -> dict:
             "image": img, "site": meta("og:site_name") or host}
 
 
-async def _own_page_preview(url: str, host: str):
+async def _own_page_preview(url: str, host: str, asgi_app=None):
     """THIS INSTANCE'S OWN LINKS ARE RENDERED HERE, NOT FETCHED (2026-10-31: "i pasted
     https://poster.place/@npub…/bitcoin-whitepaper-day in Concord and just shows a link"). The fetch below refuses
     private addresses, and from inside the network poster.place resolves to the router (192.168.0.1) -- so every link
     to our own posts, articles, profiles and repos came back empty, in every in-app card, while Discord showed them
     fine. The page is rendered by the app itself (ASGI, no socket, no SSRF question) and its og: tags read the same
-    way. None when `host` is not ours."""
+    way. None when `host` is not ours. `asgi_app` is the running app (request.app) -- never `import app.main` here: the
+    relay imports this module and the deploy planner follows imports, so that import made every app change restart the
+    relay."""
     from urllib.parse import urlparse
     try:
         from app.services.activitypub import config as ap_config
@@ -3090,8 +3092,10 @@ async def _own_page_preview(url: str, host: str):
         return None
     if not base.hostname or host.lower() != base.hostname.lower():
         return None
+    if asgi_app is None:
+        return None
     import httpx
-    from app.main import app as _app
+    _app = asgi_app
     u = urlparse(url)
     path = (u.path or "/") + (("?" + u.query) if u.query else "")
     try:
@@ -3108,7 +3112,7 @@ async def _own_page_preview(url: str, host: str):
 
 
 @router.get("/preview")
-async def link_preview(url: str):
+async def link_preview(url: str, request: Request = None):
     """Fetch OpenGraph/Twitter-card metadata for a URL so the client can show a link card.
     Public endpoint, so it guards against SSRF (no private IPs), caps size, and caches briefly."""
     import re
@@ -3120,7 +3124,7 @@ async def link_preview(url: str):
     if hit and hit[0] > now:
         return JSONResponse(hit[1])
     host = urlparse(url).hostname or ""
-    own = await _own_page_preview(url, host) if host else None
+    own = await _own_page_preview(url, host, getattr(request, "app", None)) if host else None
     if own is not None:
         if own:
             _preview_cache[url] = (now + _PREVIEW_TTL, own)
