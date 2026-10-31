@@ -63,6 +63,11 @@ def main():
     try:
         slug = repo_slug()
         sh('gh', 'auth', 'status')
+        # Already tested: a commit with a green Deploy gate run needs no second run (the push would start one).
+        done = [r for r in runs_for(slug, sha) if r.get('status') == 'completed' and r.get('conclusion') == 'success']
+        if done:
+            print('[ci-gate] %s already passed the Deploy gate: %s' % (sha[:12], done[0].get('html_url', '')))
+            return 0
         sh('git', 'push', '-q', '--force', 'github', '%s:refs/heads/%s' % (sha, branch))
     except Exception as e:
         print('[ci-gate] could not hand the commit to GitHub: %s' % e)
