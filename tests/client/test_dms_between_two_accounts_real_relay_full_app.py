@@ -34,9 +34,9 @@ CFG = {'wot_enabled': True}    # a node as it runs: both are members of its web 
 # The page's OS-notification path, observed: every `new Notification(...)` the client makes is recorded (and
 # still made -- permission is granted to the origin below).
 OBSERVE_OS = r'''
-window.__osNotes=[];
+window.__osNotes=[];window.__osNoteObjs=[];
 (()=>{const N=window.Notification;if(!N)return;
-  class Seen extends N{constructor(t,o){super(t,o);try{__osNotes.push({title:String(t),body:String((o&&o.body)||''),tag:String((o&&o.tag)||'')})}catch(_){}}}
+  class Seen extends N{constructor(t,o){super(t,o);try{__osNotes.push({title:String(t),body:String((o&&o.body)||''),tag:String((o&&o.tag)||'')});__osNoteObjs.push(this)}catch(_){}}}
   window.Notification=Seen;})();
 '''
 
@@ -225,6 +225,26 @@ def test_a_dm_while_bob_is_elsewhere_badges_toasts_and_notifies():
             await shows(bob, [('in', 'ping from Alice')])
             await R.wait(bob.b, "document.querySelector('#dm-badge').classList.contains('hidden')", 15,
                          'the badge clears once read')
+    run(scenario)
+
+
+@CHROME
+def test_tapping_the_dm_notification_opens_that_conversation():
+    """"we need regression testing for messages" (2026-10-31): the notification named Alice and its tap opened the
+    Messages LIST -- route 'messages' -- leaving Bob to find her himself. The tap is the person's own click on the
+    real notification the page raised; Bob must land IN Alice's conversation, her message on screen."""
+    async def scenario(n):
+        async with device(n, BOB) as bob, device(n, ALICE) as alice:
+            await bob.b.call('Browser.grantPermissions', {'permissions': ['notifications'], 'origin': n.origin})
+            await R.wait(bob.b, "!document.querySelector('#dm-list')", 15, 'Bob is on another screen')
+            await asyncio.sleep(4)
+            await new_dm(alice, await npub(alice, BOB), 'tap me, Bob')
+            await R.wait(bob.b, "__osNotes.some(x=>x.tag==='pc-dm' && /sent you a DM/.test(x.body))", 40,
+                         'the page raised an OS notification for the DM')
+            await bob.b.js("(()=>{const n=__osNoteObjs.filter(x=>x.tag==='pc-dm').pop();n.onclick&&n.onclick();return true})()")
+            await R.wait(bob.b, "!!document.querySelector('#dm-list.has-active') && !!document.querySelector('#dm-in')", 20,
+                         "the tap opened ALICE'S conversation, not the list")
+            await shows(bob, [('in', 'tap me, Bob')])
     run(scenario)
 
 

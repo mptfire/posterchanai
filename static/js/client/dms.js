@@ -14,7 +14,7 @@ window.PCDmsFactory = function(dep){
     $, $$, DISCOVERY_RELAYS, bumpNotif, Nip46, _blossomDenied, _capPlugin, _notePublishedWraps,
     _scheduleDmRefresh, _shaFromUrl, _withModule, _wrapTried, defaultRelays, dmEncOn, dmPeers, dmSeenFor, DmKey,
     emojiName, enc, isMutedAuthor, mediaServer, needProfile, normalizeRelay, notifToast,
-    notificationAllowed, osNotify, profOf, publish, refToPk, renderDmThread, renderMessages, _dmListRepaint,
+    notificationAllowed, openDMWith, osNotify, profOf, publish, refToPk, renderDmThread, renderMessages, _dmListRepaint,
     requestBlossomAccess, switchView, toast, uploadBlob, uploadSharedEnc, userRelays,
   } = dep;
 
@@ -1205,8 +1205,11 @@ window.PCDmsFactory = function(dep){
      * `type:'dm'` is the other half: the native plugin records that a live client spoke for this DM,
      * and a generic push arriving just afterwards is dropped rather than overwriting the better
      * wording (or re-posting a message already read). See ClientNotified. */
-    osNotify('✉ New message', `${who} sent you a DM`, { tag:'pc-dm', type:'dm', icon:p.picture||S.LOGO, route:'messages',
-                                                        onClick:()=>switchView('messages') });
+    /* The tap opens THIS PERSON'S conversation (route dm:<pk>, every surface: desktop card, Electron, the APK's
+     * launch view); with no sender to name it is the Messages list, as before. */
+    const route = /^[0-9a-f]{64}$/.test(String(fromPk||'')) ? 'dm:' + fromPk : 'messages';
+    osNotify('✉ New message', `${who} sent you a DM`, { tag:'pc-dm', type:'dm', icon:p.picture||S.LOGO, route,
+                                                        onClick:()=>{ if(route==='messages' || !openDMWith(fromPk)) switchView('messages'); } });
   }
   // Index DMs WITHOUT decrypting (decryption is CPU-heavy ECDH+AES in the worker; decrypting all
   // 200 on load jams the worker and stalls timeline verification). Decrypt lazily on view.

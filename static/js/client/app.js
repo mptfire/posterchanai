@@ -12604,7 +12604,7 @@
     $, $$, DISCOVERY_RELAYS, bumpNotif, Nip46, _blossomDenied, _capPlugin, _notePublishedWraps,
     _scheduleDmRefresh, _shaFromUrl, _withModule, _wrapTried, defaultRelays, dmEncOn, dmPeers, dmSeenFor, DmKey,
     emojiName, enc, isMutedAuthor, mediaServer, needProfile, normalizeRelay, notifToast,
-    notificationAllowed, osNotify, profOf, publish, refToPk, renderDmThread, renderMessages, _dmListRepaint, _dmListParked,
+    notificationAllowed, openDMWith, osNotify, profOf, publish, refToPk, renderDmThread, renderMessages, _dmListRepaint, _dmListParked,
     requestBlossomAccess, switchView, toast, uploadBlob, uploadSharedEnc, userRelays,
   }; }
   function _dmsMod(){ return _lzGet('dms.js', 'PCDmsFactory', _dmsDeps); }
@@ -13220,6 +13220,10 @@
       _withModule('telegram.js','PCTelegram',mod=>mod.openNotification&&mod.openNotification({chat:Number(chat)}));
       return true;
     }
+    /* dm:<hex> -- a DM notification opens THAT conversation, not the Messages list (2026-10-31: "we need regression
+     * testing for messages"). openDMWith validates the key (the route can arrive from another window or the APK);
+     * a malformed one still lands on Messages rather than nowhere. */
+    if(value.startsWith('dm:')){ if(!openDMWith(value.slice(3))) switchView('messages'); return true; }
     if(value.startsWith('concord:')){
       const bits=value.slice(8).split(':').map(x=>{try{return decodeURIComponent(x);}catch(_){return '';}});
       if(bits.length<3||!bits[0])return false;

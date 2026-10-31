@@ -160,7 +160,9 @@ PAGE = (ROOT / "templates/client.html").read_text(encoding="utf-8")
 #: (dms.js _dmPlace: a peer a minute behind put its answers above our question). 8.2268 MB measured.
 #: ...and 8.227 -> 8.231 for calls that do not ring until the person turns ringing on (blossom.js _OFF_BY_DEFAULT,
 #: calls.js _callsMayRing + the Calls screen's switch): "call spam from people he knows". 8.2307 MB measured.
-BUDGET_MB = 8.231
+#: ...and 8.231 -> 8.232 for a DM notification that opens the sender's conversation (app.js `dm:<pk>` route,
+#: phoneshell's launch view): "we need regression testing for messages". 8.2313 MB measured.
+BUDGET_MB = 8.232
 #: No single asset should be a surprise. app.js is 2.55 MB and is the reason this is not lower.
 # RAISED 2026-09-18, 2.80 -> 2.85, AND DELIBERATELY BY THE MEASURED AMOUNT AND NOT A ROUND NUMBER.
 #
