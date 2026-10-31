@@ -2766,9 +2766,13 @@ PROFILE
 		# not merely unhelpful but misleading. The output goes to a file and the tail of it is
 		# printed when the sync fails.
 		if _in 'emerge --sync posterchan' >/tmp/pc-overlay-sync.log 2>&1; then
-			_in 'emerge -uDN --autounmask-write app-misc/posterchanos-shell' >/dev/null 2>&1
-			_in 'etc-update -q --automode -5' >/dev/null 2>&1
-			_in 'emerge -uDN app-misc/posterchanos-shell' >/dev/null 2>&1 || true
+			# THE SHELL PACKAGE ONLY, NEVER A DEEP UPDATE (2026-10-31). This was `emerge -uDN`, which on a live install
+			# rebuilds from source whatever in the copied image differs from the synced trees: the 20261031 install gate
+			# sat compiling C++ (30 cc1plus) until the VM ran out of memory and the hour ran out. It only ever ran when
+			# the overlay sync succeeded -- the install with no /tmp skipped it -- which is why it surfaced only once
+			# that was fixed. The image IS the system; a full update is update-posterchan's job, run when the person
+			# chooses. A newer shell's own new dependencies arrive with that update.
+			_in 'emerge -1u --nodeps app-misc/posterchanos-shell' >/dev/null 2>&1 || true
 		else
 			echo -e "\033[1;33m  the overlay sync failed — installing the shell directly\033[0m"
 			tail -n 12 "${TARGET}/tmp/pc-overlay-sync.log" 2>/dev/null \
