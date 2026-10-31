@@ -112,11 +112,17 @@ def _mux_command(name: str, screen_marker: str = "") -> str:
     what is installed there is not something this node can know.
 
     `new-session -A` is attach-or-create in one atomic step; `-s` names it. screen's `-xRR` is the
-    same idea. Both are `exec`d so the wrapper shell does not sit between the PTY and the session."""
+    same idea. Both are `exec`d so the wrapper shell does not sit between the PTY and the session.
+
+    MOUSE ON, FOR THIS SESSION ONLY ("terminal on mobile is not scrollable", 2026-10-31). tmux draws on the
+    terminal's ALTERNATE screen, which has no scrollback of its own -- the history is tmux's. With mouse mode off
+    (tmux's default) a swipe or a wheel can only reach it as up/down ARROW KEYS, which walk the shell's command
+    history instead of scrolling. With it on, the wheel goes to tmux, which scrolls its history. `-t` the session,
+    never `-g`: the host's tmux server is shared with whatever tmux its owner runs there themselves."""
     q = shlex.quote(name)
     metadata = ("printf '\\036" + screen_marker + ":%s\\037' \"$(tty)\"; ") if screen_marker else ""
     return (
-        f"if command -v tmux >/dev/null 2>&1; then exec tmux -u new-session -A -s {q}; "
+        f"if command -v tmux >/dev/null 2>&1; then exec tmux -u new-session -A -s {q} \\; set-option -q -t {q} mouse on; "
         f"elif command -v screen >/dev/null 2>&1; then {metadata}exec screen -xRR {q}; "
         f'else exec "${{SHELL:-/bin/sh}}" -l; fi'
     )
