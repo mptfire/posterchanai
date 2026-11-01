@@ -84,3 +84,21 @@ def test_the_smoke_script_drives_a_real_terminal_here():
     done = subprocess.run([NODE, "scripts/terminal-smoke.js"], cwd=DESK, capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stdout[-500:] + done.stderr[-2000:]
     assert "terminal OK on linux" in done.stdout
+
+
+def test_mac_build_makes_the_node_pty_helper_executable_before_using_it():
+    """node-pty 1.1.0 ships prebuilds/darwin-*/spawn-helper as 0644; without +x every macOS terminal fails with
+    "posix_spawnp failed" (the 2026-10-31 desktop build). The chmod must run before the smoke test (and so before
+    packaging copies the file into the app)."""
+    wf = (ROOT / ".github/workflows/desktop.yml").read_text()
+    i = wf.index("- name: node-pty's macOS spawn-helper is executable")
+    step = wf[i:].split("\n      - ", 1)[0]
+    assert "matrix.name == 'mac'" in step and "chmod 755 node_modules/node-pty/prebuilds/darwin-*/spawn-helper" in step
+    assert i < wf.index("- name: Local terminal works on this OS")
+
+
+def test_the_utf8_stream_check_drives_the_path_it_feeds():
+    """That runtime feeds bytes into a stubbed child_process (the Linux `script` path). On Windows/macOS localterm
+    starts node-pty instead, so the stub saw nothing and the check failed the desktop build there. It pins linux."""
+    src = (ROOT / "tests/client/terminal_utf8_stream_runtime.mjs").read_text()
+    assert "k==='platform'?'linux'" in src and "process:linux" in src

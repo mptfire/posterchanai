@@ -228,6 +228,19 @@ jobs:
       # THE LOCAL TERMINAL, STARTED FOR REAL ON WINDOWS AND MACOS (2026-10-31, "that shell has exited"). Linux runs its
       # path in the regression gate; these two use node-pty (ConPTY on Windows), which nothing else here executes. Types
       # a command into a real shell through desktop/localterm.js and requires its output back, before anything ships.
+      # node-pty 1.1.0 PUBLISHES its macOS spawn-helper as -rw-r--r-- (checked in the npm tarball), and every shell it
+      # starts goes through that helper -- so on macOS each terminal died with "posix_spawnp failed" (desktop build,
+      # 2026-10-31). Executable here, before the smoke test and before electron-builder copies it into the app.
+      - name: node-pty's macOS spawn-helper is executable
+        if: matrix.name == 'mac'
+        working-directory: desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls node_modules/node-pty/prebuilds/darwin-*/spawn-helper >/dev/null
+          chmod 755 node_modules/node-pty/prebuilds/darwin-*/spawn-helper
+          for f in node_modules/node-pty/prebuilds/darwin-*/spawn-helper; do test -x "$f" || { echo "::error::$f is not executable"; exit 1; }; done
+
       - name: Local terminal works on this OS
         if: matrix.name != 'linux'
         working-directory: desktop

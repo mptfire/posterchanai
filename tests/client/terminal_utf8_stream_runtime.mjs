@@ -9,7 +9,11 @@ const path=process.argv[2]?pathToFileURL(process.argv[2]):new URL('../../desktop
 const realRequire=createRequire(path), child=new EventEmitter();
 child.stdout=new PassThrough();child.stderr=new PassThrough();child.stdin=new PassThrough();
 const module={exports:{}};
-vm.runInNewContext(fs.readFileSync(path,'utf8'),{module,exports:module.exports,process,Buffer,
+// The `script` + child_process path, which this check feeds byte by byte. Windows and macOS start a node-pty PTY instead
+// (localterm.ptyModule), which never calls this stubbed spawn -- so on those runners the check measured nothing and
+// failed the desktop build (2026-10-31). node-pty is driven for real there by desktop/scripts/terminal-smoke.js.
+const linux=new Proxy(process,{get:(t,k)=>k==='platform'?'linux':Reflect.get(t,k)});
+vm.runInNewContext(fs.readFileSync(path,'utf8'),{module,exports:module.exports,process:linux,Buffer,
  setTimeout:()=>0,clearTimeout:()=>{},require:name=>name==='child_process'?{spawn:()=>child}:realRequire(name)});
 const T=module.exports,session=T.start({cols:100,rows:30});
 let drawn='';T.subscribe(session.id,ev=>{if(ev.t==='out')drawn+=ev.d;});
