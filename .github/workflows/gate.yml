@@ -70,6 +70,14 @@ jobs:
       # not. bash as /bin/sh (Gentoo's; dash cannot do the multi-digit fd redirections the shell scripts use), node in
       # /usr/bin (tests that pin PATH=/usr/bin:/bin), the app's state directory, Liberation Sans as the default sans
       # (layout checks measure text), and acorn for the tests that parse the shipped client.
+      # A current ffmpeg for the TEST'S stand-in OBS publisher only (PC_TEST_PUBLISH_FFMPEG); the app keeps Ubuntu's. Cached,
+      # because the one public host that serves it failed two deploys on 2026-10-31 (a timeout, then a truncated archive).
+      - name: Cache the test publisher's ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pc-test-ffmpeg
+          key: pc-test-ffmpeg-release-v1
+
       - name: Match the target machine
         shell: bash
         run: |
@@ -89,10 +97,26 @@ jobs:
           fc-cache -f >/dev/null
           echo "sans-serif is now: $(fc-match sans-serif)"
           test "$(fc-match -f '%{family}' sans-serif)" = "Liberation Sans"
-          # A current ffmpeg for the TEST'S stand-in OBS publisher only (PC_TEST_PUBLISH_FFMPEG); the app keeps Ubuntu's.
-          curl -fsSL --retry 5 https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o "$RUNNER_TEMP/ff.txz"
-          mkdir -p "$RUNNER_TEMP/ff" && tar -xJf "$RUNNER_TEMP/ff.txz" -C "$RUNNER_TEMP/ff" --strip-components=1
-          echo "PC_TEST_PUBLISH_FFMPEG=$RUNNER_TEMP/ff/ffmpeg" >> "$GITHUB_ENV"
+          # The test publisher's ffmpeg: from the cache, else downloaded and VERIFIED (the archive lists cleanly and the binary
+          # runs) with retries. If the host is down that one test publishes with Ubuntu's ffmpeg instead -- a warning, never
+          # a failed part: an outside download must not decide whether a deploy's tests ran.
+          ff=~/.cache/pc-test-ffmpeg
+          if ! "$ff/ffmpeg" -version >/dev/null 2>&1; then
+            for i in 1 2 3 4; do
+              rm -rf "$ff" "$RUNNER_TEMP/ff.txz"; mkdir -p "$ff"
+              if curl -fsSL --retry 3 --max-time 300 https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
+                   -o "$RUNNER_TEMP/ff.txz" && tar -tJf "$RUNNER_TEMP/ff.txz" >/dev/null \
+                 && tar -xJf "$RUNNER_TEMP/ff.txz" -C "$ff" --strip-components=1 && "$ff/ffmpeg" -version >/dev/null 2>&1; then
+                break
+              fi
+              rm -rf "$ff"; sleep $((i * 20))
+            done
+          fi
+          if "$ff/ffmpeg" -version >/dev/null 2>&1; then
+            echo "PC_TEST_PUBLISH_FFMPEG=$ff/ffmpeg" >> "$GITHUB_ENV"
+          else
+            echo "::warning::the static ffmpeg could not be fetched; the Go Live test publishes with Ubuntu's ffmpeg"
+          fi
 
       - name: LiveKit for the call tests
         timeout-minutes: 5
@@ -144,6 +168,7 @@ jobs:
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
         run: |
+          [ -f "$RUNNER_TEMP/gate.out" ] || { echo "the tests never ran (a setup step failed) -- see the step above"; exit 0; }
           ids=$(awk '/failing in the full suite/{f=1;next} f&&/^  tests\//{print $1} f&&!/^  /{f=0}' "$RUNNER_TEMP/gate.out" | head -20)
           [ -n "$ids" ] || exit 0
           xvfb-run -a venv-unified/bin/python -m pytest -q -p no:cacheprovider -rfE --tb=short $ids || true
