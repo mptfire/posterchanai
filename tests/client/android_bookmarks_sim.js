@@ -24,13 +24,15 @@ const NATIVE = fs.readFileSync(path.join(__dirname, '..', '..', 'extension', 'bo
 const ROOTS = { menu________: 'menu', toolbar_____: 'toolbar', unfiled_____: 'unfiled', mobile______: 'mobile' };
 
 /* Firefox for Android's bookmark storage, behind the native-messaging protocol. */
-function makeApp() {
+function makeApp(opts) {
+  opts = opts || {};
   const nodes = { root________: { guid: 'root________', parentGuid: null, title: '', type: 'folder', children: [] } };
   for (const [g, t] of Object.entries(ROOTS)) {
     nodes[g] = { guid: g, parentGuid: 'root________', title: t, type: 'folder', children: [] };
     nodes.root________.children.push(g);
   }
   let seq = 0, writes = 0, failReads = false, disconnects = [];
+  let listening = opts.listening !== false, pending = [], dropped = 0;
   const add = (parentGuid, title, url, type) => {
     if (!nodes[parentGuid] || nodes[parentGuid].type !== 'folder') throw new Error('no such folder ' + parentGuid);
     const guid = ('g' + (++seq)).padEnd(12, '_');
@@ -86,26 +88,41 @@ function makeApp() {
     folderOf(url) { const n = Object.values(nodes).find(x => x.url === url); return n && nodes[n.parentGuid].title; },
     userAdd(url, title) { return add('mobile______', title || url, url, 'item'); },     // Fenix files new bookmarks here
     userDelete(url) { const n = Object.values(nodes).find(x => x.url === url); return n && del(n.guid); },
-    /* runtime.connectNative as GeckoView gives a built-in extension. */
+    /* The app registering its listener, which it does only once the built-in extension has installed. */
+    listen() {
+      listening = true;
+      const held = pending; pending = [];
+      held.forEach(c => c());
+    },
+    /* runtime.connectNative as GeckoView gives a built-in extension. A connection made before the app listens is HELD
+     * and handed to the app when it does; a message posted on the port before then is DROPPED (GeckoView's port has
+     * no listener yet). On connect the app says hello (PosterChanBookmarks.onPortConnected). */
     runtime: {
       connectNative(name) {
         if (name !== 'posterfox_bookmarks') throw new Error('unknown native app ' + name);
         const onMsg = [], onDis = [];
+        let connected = false;
         disconnects.push(onDis);
+        const deliver = (m) => onMsg.forEach(f => f(JSON.parse(JSON.stringify(m))));
+        const connect = () => { connected = true; setTimeout(() => deliver({ hello: true }), 0); };
+        if (listening) connect(); else pending.push(connect);
         return {
           onMessage: { addListener: (f) => onMsg.push(f) },
           onDisconnect: { addListener: (f) => onDis.push(f) },
+          disconnect() { connected = false; },
           postMessage(m) {
+            if (!connected) { dropped++; return; }
             setTimeout(() => {
               let reply;
               try { reply = { id: m.id, ok: true, result: ops[m.op](m.args || {}) }; }
               catch (e) { reply = { id: m.id, ok: false, error: String(e.message || e) }; }
-              onMsg.forEach(f => f(JSON.parse(JSON.stringify(reply))));
+              deliver(reply);
             }, 0);
           },
         };
       },
     },
+    dropped: () => dropped,
   };
 }
 
@@ -270,6 +287,28 @@ function check(name, ok, detail) { results.push({ name, ok: !!ok, detail }); if 
     check('a settled phone and desktop stop writing', relay.publishes === p0 && app.writes() === w0
       && app.urls().length === 6,
       { publishes: relay.publishes - p0, appWrites: app.writes() - w0, phone: app.urls().length });
+  }
+
+  // ---- 7. The app starts listening AFTER the extension's first read (what a real start looks like) --------------
+  // GeckoView holds the early connection and drops what was posted on it; the old stand-in waited on that lost
+  // answer for ever and never asked the app anything again -- measured on the emulator, not one bridge call.
+  {
+    const relay = S.makeRelay(), app = makeApp({ listening: false });
+    const d = S.makeBrowser('f', relay, DESKTOP_ROOTS);
+    d.mk('toolbar_____', 'Desk', 'https://desk-late.example/');
+    const a = makeAndroid(relay, app);                       // the stand-in's baseline read goes out now
+    await drain();
+    app.listen();
+    const deadline = (p, ms) => Promise.race([p.then(() => true), new Promise(r => setTimeout(() => r(false), ms))]);
+    const ok = await deadline((async () => {
+      await d.init(); await a.init(); await settle(d, a);
+      app.userAdd('https://late-phone.example/');
+      await live(d, a);
+    })(), 8000);
+    check('a phone whose app starts listening late still syncs both ways',
+      ok && app.urls().includes('https://desk-late.example/') && d.urls().includes('https://late-phone.example/')
+        && app.dropped() === 0,
+      { finished: ok, phone: app.urls(), desktop: d.urls(), droppedBeforeListening: app.dropped() });
   }
 
   console.log(JSON.stringify(results, null, 1));

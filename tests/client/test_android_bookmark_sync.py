@@ -15,6 +15,8 @@ the protocol the Kotlin bridge implements, next to a desktop Firefox on one rela
   outage                  a tree the app could not read deletes nothing anywhere, measured during the outage
   first sync              a union: both sides gain, neither loses
   quiet                   a settled pair writes nothing more
+  late app                the app starts listening after the extension's first read: GeckoView holds the connection
+                          and drops what was posted on it, so the stand-in sends nothing until the app's hello
 
 Each was shown to fail against a broken stand-in (no events fired; a failed read taken as an empty tree).
 
@@ -57,6 +59,7 @@ def results():
     "a failed read deletes nothing anywhere",
     "first sync gains both sides and deletes none",
     "a settled phone and desktop stop writing",
+    "a phone whose app starts listening late still syncs both ways",
 ])
 def test_scenario(results, name):
     assert name in results, f"scenario missing: {name!r} (have {list(results)})"

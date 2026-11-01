@@ -90,32 +90,60 @@
 
   function create(runtime, opts) {
     opts = opts || {};
-    var port = null, seq = 0, waiting = {};
+    var HELLO_MS = opts.helloMs || 20000, CALL_MS = opts.callMs || 60000;
+    var port = null, ready = false, queue = [], seq = 0, waiting = {};
     var last = null;                         // flattened tree from the last successful read; null = no baseline yet
     var events = { onCreated: makeEvent(), onRemoved: makeEvent(), onChanged: makeEvent(), onMoved: makeEvent() };
 
+    /* NOTHING IS SENT UNTIL THE APP SAYS HELLO. The extension starts before the app has registered its listener, and
+     * GeckoView then HOLDS the connection until it does -- but a message posted on the port meanwhile is dropped. The
+     * first baseline read was exactly that message: it never got an answer, the serialised refresh chain waited on it
+     * for ever, and the app was never asked anything again (measured on the emulator: not one bridge call). So calls
+     * queue until the app's `{hello}` arrives (PosterChanBookmarks posts it on connect), and every call has a deadline,
+     * so a lost answer costs one refresh instead of all of them. */
+    function drop(p, why) {
+      if (port !== p) return;
+      port = null; ready = false; queue = [];
+      try { p.disconnect(); } catch (_) {}
+      var w = waiting; waiting = {};
+      Object.keys(w).forEach(function (k) { w[k].reject(new Error(why)); });
+    }
+
     function connect() {
       if (port) return port;
-      port = runtime.connectNative(APP);
-      port.onMessage.addListener(function (m) {
+      var p = port = runtime.connectNative(APP);
+      ready = false;
+      var hello = setTimeout(function () { if (port === p && !ready) drop(p, 'bookmark storage did not answer'); }, HELLO_MS);
+      p.onMessage.addListener(function (m) {
+        if (port !== p) return;
+        if (m && m.hello) {
+          ready = true; clearTimeout(hello);
+          var q = queue; queue = [];
+          q.forEach(function (msg) { p.postMessage(msg); });
+          return;
+        }
         var w = m && waiting[m.id]; if (!w) return;
         delete waiting[m.id];
         if (m.ok) w.resolve(m.result); else w.reject(new Error(String(m.error || 'bookmark storage refused')));
       });
-      port.onDisconnect.addListener(function () {
-        port = null;
-        Object.keys(waiting).forEach(function (k) { waiting[k].reject(new Error('bookmark storage went away')); });
-        waiting = {};
-      });
-      return port;
+      p.onDisconnect.addListener(function () { clearTimeout(hello); drop(p, 'bookmark storage went away'); });
+      return p;
     }
 
     function call(op, args) {
       return new Promise(function (resolve, reject) {
-        var id = ++seq;
-        waiting[id] = { resolve: resolve, reject: reject };
-        try { connect().postMessage({ id: id, op: op, args: args || {} }); }
-        catch (e) { delete waiting[id]; reject(e); }
+        var id = ++seq, msg = { id: id, op: op, args: args || {} };
+        var t = setTimeout(function () {
+          if (waiting[id]) { delete waiting[id]; reject(new Error('bookmark storage did not answer')); }
+        }, CALL_MS);
+        waiting[id] = {
+          resolve: function (v) { clearTimeout(t); resolve(v); },
+          reject: function (e) { clearTimeout(t); reject(e); },
+        };
+        try {
+          var p = connect();
+          if (ready) p.postMessage(msg); else queue.push(msg);
+        } catch (e) { delete waiting[id]; clearTimeout(t); reject(e); }
       });
     }
 
