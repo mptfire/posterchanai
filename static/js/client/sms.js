@@ -1492,6 +1492,8 @@
   function smsLedgerClear(key){
     const pk = ME().pubkey, l = smsLedger(pk);
     if(l[key]){ delete l[key]; saveSmsLedger(pk, l); }
+    // Read HERE is read on every device: the account's mark (seen.js `ext`) trims their ledgers too.
+    try{ const P = window.__PC || {}; if(P.seenMarkExt) P.seenMarkExt('sms:' + key, Math.floor(Date.now() / 1000)); }catch(_){}
   }
   async function notifyNew(ev, owner){
     try{

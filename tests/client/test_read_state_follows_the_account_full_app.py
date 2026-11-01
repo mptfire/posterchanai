@@ -129,3 +129,51 @@ def test_read_on_one_device_is_read_on_the_next_and_newer_still_counts():
         assert not await b.js('__errors'), await b.js('__errors')
 
     asyncio.run(desktop.with_browser('online', '', check, RELAY))
+
+
+# Telegram and Texts rows as telegram.js / sms.js write them on THIS device, `ago` seconds old.
+LEDGERS = r'''((ago)=>{const pk=__PC.me().pubkey,at=(Math.floor(Date.now()/1000)-ago)*1000;
+ localStorage.setItem('pc.tg.unread.v1.'+pk,JSON.stringify({
+   '-1001234':{chat:-1001234,title:'Read on the laptop',ids:[1,2],at,text:'old'},
+   '777':{chat:777,title:'Never opened anywhere',ids:[3],at,text:'still new'}}));
+ localStorage.setItem('pc.sms.unread.v1.'+pk,JSON.stringify({
+   '15551234567':{address:'+15551234567',title:'Mum',ids:['s1'],at,text:'old text'}}));
+ window.dispatchEvent(new StorageEvent('storage',{key:'pc.tg.unread.v1.'+pk}));return true;})'''
+
+# ANOTHER device's pcai:seen: those two chats read `ago` seconds ago (sealed with the account's key, as seen.js writes it).
+OTHER_DEVICE_READ = r'''((ago)=>{const me=new Uint8Array(32).fill(1),mePk=NostrTools.getPublicKey(me),t=Math.floor(Date.now()/1000)-ago;
+ const doc={v:1,notif:0,dmAll:0,dm:{},ext:{'tg:-1001234':t,'sms:15551234567':t}};
+ const ev=NostrTools.finalizeEvent({kind:30078,created_at:Math.floor(Date.now()/1000),tags:[['d','pcai:seen']],
+   content:NostrTools.nip44.encrypt(JSON.stringify(doc),NostrTools.nip44.getConversationKey(me,mePk))},me);
+ const r=_rel();r.push(ev);localStorage.setItem('__relayEvents',JSON.stringify(r));return true;})'''
+
+TG_ROWS = "Object.keys(JSON.parse(localStorage.getItem('pc.tg.unread.v1.'+__PC.me().pubkey)||'{}')).sort()"
+SMS_ROWS = "Object.keys(JSON.parse(localStorage.getItem('pc.sms.unread.v1.'+__PC.me().pubkey)||'{}'))"
+
+
+@pytest.mark.skipif(not Path('/opt/google/chrome/chrome').exists(), reason='Chrome required')
+def test_telegram_and_texts_read_on_another_device_leave_this_ones_bell():
+    """"aren't notifications supposed to sync across devices? My other devices are showing old telegram, texts, and
+    unread notifications" (2026-10-31, the Windows app and PosterChanOS). Telegram and Texts counted from per-device
+    ledgers no other device could clear. Here this device holds two Telegram chats and one Texts thread unread; another
+    device's pcai:seen says it read one of those chats and that thread AFTER their newest message. This device must
+    drop exactly those rows -- the chat nobody opened stays, and the bell drops by what left.
+
+    Fail-first: on the old code the rows stay and the bell keeps counting them."""
+    async def check(b):
+        await b.call('Emulation.setDeviceMetricsOverride', dict(width=1280, height=900, deviceScaleFactor=1, mobile=False))
+        await b.until("document.body.classList.contains('guest')")
+        await boot(b, True)
+        await b.js(LEDGERS + "(600)")
+        await until(b, TG_ROWS + ".length===2 && " + SMS_ROWS + ".length===1")
+        before = await b.js("__PC.notifUnread()")
+        await b.js(OTHER_DEVICE_READ + "(60)")
+        await b.call('Page.reload')
+        await asyncio.sleep(.3)
+        await boot(b, False)
+        await until(b, TG_ROWS + ".join()==='777' && " + SMS_ROWS + ".length===0", seconds=20)
+        after = await b.js("__PC.notifUnread()")
+        assert after == before - 3, ('the bell did not drop by the 2 Telegram + 1 Texts messages read elsewhere', before, after)
+        assert not await b.js('__errors'), await b.js('__errors')
+
+    asyncio.run(desktop.with_browser('online', '', check, RELAY))

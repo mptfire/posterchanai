@@ -1521,8 +1521,25 @@
   }
   function seenMarkNotif(ts){ const s = _seenFor(); if(s) s.markNotif(ts); }
   function _dmNewest(arr){ let n = 0; for(const m of arr || []) if((m.t || 0) > n) n = m.t; return n; }
+  /* TELEGRAM AND TEXTS READ ELSEWHERE leave this device's bell and notifications list too: their unread rows are
+   * per-device ledgers (telegram.js / sms.js, localStorage), so each is trimmed of every row the ACCOUNT has read up to
+   * or past (seen.js `ext`, `prune`). Rewritten only when a row actually goes, so the `storage` event other windows
+   * listen on fires for a real change. */
+  function _seenPruneLedgers(st){
+    if(!st || !st.ext || !window.PCSeen || !PCSeen.prune) return;
+    for(const [prefix, base] of [['tg', 'pc.tg.unread.v1.'], ['sms', 'pc.sms.unread.v1.']]){
+      try{
+        const key = base + st.owner, raw = localStorage.getItem(key);
+        if(!raw) continue;
+        const r = PCSeen.prune(JSON.parse(raw) || {}, st.ext, prefix);
+        if(r.removed) localStorage.setItem(key, JSON.stringify(r.ledger));
+      }catch(_){}
+    }
+  }
+  function seenMarkExt(k, ts){ const s = _seenFor(); return s ? s.markExt(k, ts) : false; }
   function _seenApply(st){
     if(!st || !ME || st.owner !== ME.pubkey) return;
+    _seenPruneLedgers(st);
     if((st.notif || 0) > (seenNotif.last || 0)){ seenNotif.last = st.notif; }
     try{ bumpNotif(); }catch(_){}
     try{ recountDmUnread(); }catch(_){}
@@ -14986,6 +15003,7 @@
   }
   window.__PC = {
     deviceCache,
+    seenMarkExt,   // telegram.js / sms.js: this chat / conversation read, on every device (seen.js `ext`)
     consumeShare: _consumeSendIntent,   // the Android share-in handler (tests drive it with a stand-in plugin)
     concordBack: _concordBack,
     // The one on-demand script loader, shared so a module is never fetched twice (concord.js loads

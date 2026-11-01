@@ -265,11 +265,16 @@
   function ledgerClear(chatId){
     const l = ledger(), k = String(chatId);
     if(l[k]){ delete l[k]; saveLedger(l); }
+    // Read HERE is read on every device: the account's mark (seen.js `ext`) trims their ledgers too.
+    try{ const P = PC(); if(P.seenMarkExt) P.seenMarkExt('tg:' + k, Math.floor(Date.now() / 1000)); }catch(_){}
   }
   // Read on the phone's Telegram (or anywhere else): the dialog list says unread 0, so the row goes.
   function ledgerReconcile(dialogs){
     const l = ledger(); let changed = false;
-    for(const d of dialogs || []) if(d && l[String(d.id)] && !(d.unread > 0)){ delete l[String(d.id)]; changed = true; }
+    for(const d of dialogs || []) if(d && l[String(d.id)] && !(d.unread > 0)){
+      delete l[String(d.id)]; changed = true;
+      try{ const P = PC(); if(P.seenMarkExt) P.seenMarkExt('tg:' + String(d.id), Math.floor(Date.now() / 1000)); }catch(_){}
+    }
     if(changed) saveLedger(l);
   }
   function openChatFromNotification(chatId){

@@ -8,6 +8,9 @@
  *   unreadable       a copy we cannot decrypt is never written over
  *   per account      account B never sees, nor publishes, account A's marks; a signed-out engine is inert
  *   bounded          the conversation map is capped, marks covered by dmAll are dropped, no future dates
+ *   telegram/texts   a chat read on device A ("tg:<chat>" / "sms:<conv>") reaches device B, and B's per-device
+ *                    ledger loses exactly the rows read up to or past their newest message ("my other devices are
+ *                    showing old telegram, texts, and unread notifications", 2026-10-31)
  */
 import fs from 'fs';
 import vm from 'vm';
@@ -189,6 +192,36 @@ for (const mode of ['throw', 'timeout']) {
   ok(a.notif() <= 10000, 'a date from the future was marked read: ' + a.notif());
   ok(a.markDm('not-a-key', 5) === false, 'a junk conversation key was accepted');
   a.stop();
+}
+
+// ---- telegram / texts read on another device ----
+{
+  const r = relay();
+  const a = engine(r, A, storage());
+  await a.load();
+  ok(a.markExt('tg:-1001234', 3000) === true && a.markExt('sms:15551234567', 3000) === true, 'Telegram / Texts marks are accepted');
+  ok(a.markExt('tg:-1001234', 2000) === false, 'a Telegram mark moved backwards');
+  ok(a.markExt('evil key', 3000) === false && a.markExt('mail:x', 3000) === false, 'a junk ext key was accepted');
+  await a.flush();
+  const d = docOf(r.published[r.published.length - 1]);
+  ok(d.ext && d.ext['tg:-1001234'] === 3000 && d.ext['sms:15551234567'] === 3000, 'the document carries the ext marks: ' + JSON.stringify(d));
+
+  const b = engine(r, A, storage());
+  await b.load();
+  ok(b.extFor('tg:-1001234') === 3000 && b.extFor('sms:15551234567') === 3000, 'device B inherits the Telegram/Texts marks');
+  // B's own ledgers: a chat read on A before its newest message, one read after, and one A never opened.
+  const tg = { '-1001234': { at: 2999 * 1000, title: 'read on A' }, '777': { at: 2500 * 1000, title: 'never opened on A' } };
+  const sms = { '15551234567': { at: 3001 * 1000, title: 'arrived after A read it' } };
+  const t = PCSeen.prune(tg, b.snapshot().ext, 'tg'), m = PCSeen.prune(sms, b.snapshot().ext, 'sms');
+  ok(t.removed === 1 && !t.ledger['-1001234'] && t.ledger['777'], 'the Telegram chat read on A leaves B, the other stays: ' + JSON.stringify(t));
+  ok(m.removed === 0 && m.ledger['15551234567'], 'a text that arrived AFTER A read the thread is still new on B');
+  ok(PCSeen.prune(tg, {}, 'tg').removed === 0, 'no marks removes nothing');
+
+  // An older document arriving late never un-reads a chat.
+  r.put(A, { v: 1, notif: 0, dmAll: 0, dm: {}, ext: { 'tg:-1001234': 10 } }, 1);
+  await b.load();
+  ok(b.extFor('tg:-1001234') === 3000, 'an older copy moved a Telegram mark backwards');
+  a.stop(); b.stop();
 }
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }

@@ -168,7 +168,9 @@ PAGE = (ROOT / "templates/client.html").read_text(encoding="utf-8")
 #: none in the app until 2026-10-31 and the stored {} would have outlived the fix.
 #: ...and 8.235 -> 8.239 (measured 8.2385) for 2026-10-31's phone UI requests, all our own code: the icons-only bottom bar
 #: and its one --mnav-h variable, the compact All | Posts replies slider, and the Terminal's tab dropdown on phones.
-BUDGET_MB = 8.239
+#: ...and 8.239 -> 8.243 (measured 8.2421) for Telegram and Texts read state syncing across devices (seen.js `ext` +
+#: ledger pruning), our own code: "my other devices are showing old telegram, texts, and unread notifications".
+BUDGET_MB = 8.243
 #: No single asset should be a surprise. app.js is 2.55 MB and is the reason this is not lower.
 # RAISED 2026-09-18, 2.80 -> 2.85, AND DELIBERATELY BY THE MEASURED AMOUNT AND NOT A ROUND NUMBER.
 #

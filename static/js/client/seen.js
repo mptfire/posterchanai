@@ -10,7 +10,14 @@
  *
  *     { v:1, notif:<newest notification seen, created_at>,
  *       dmAll:<newest DM seen when the Messages list was opened>,
- *       dm:{ <peer pubkey>: <newest message read in that conversation> } }
+ *       dm:{ <peer pubkey>: <newest message read in that conversation> },
+ *       ext:{ "tg:<chat id>" | "sms:<conversation>": <read up to, unix seconds> } }
+ *
+ * `ext` is TELEGRAM AND TEXTS ("my other devices are showing old telegram, texts, and unread notifications",
+ * 2026-10-31). Their unread rows are per-device ledgers in localStorage (telegram.js / sms.js), which the bell and the
+ * desktop's notifications list count -- so a chat read on the laptop stayed "new" on the Windows app and PosterChanOS
+ * until each of them opened it too. Opening a chat now also marks it here, and every device drops a ledger row whose
+ * newest message is at or before that mark (`prune`).
  *
  * MERGE RULE: every field is a MAX. A marker only ever moves forward, the merge runs on every read
  * and again right before every write, so two devices can never un-read each other and an older copy
@@ -28,16 +35,19 @@
   'use strict';
   const D = 'pcai:seen', CAP = 500;
   const HEX = /^[0-9a-f]{64}$/;
+  const EXT = /^(tg|sms):\S{1,96}$/;
   const num = v => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0; };
 
   /* Anything that is not a well-formed marker is dropped, never trusted: the document is ours, but a
    * cache can be corrupted and a hostile relay can hand back anything. */
   function clean(raw){
-    const out = { notif: 0, dmAll: 0, dm: {} };
+    const out = { notif: 0, dmAll: 0, dm: {}, ext: {} };
     if(!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
     out.notif = num(raw.notif); out.dmAll = num(raw.dmAll);
     const dm = raw.dm && typeof raw.dm === 'object' && !Array.isArray(raw.dm) ? raw.dm : {};
     for(const [k, v] of Object.entries(dm)){ const n = num(v); if(HEX.test(k) && n) out.dm[k] = n; }
+    const ext = raw.ext && typeof raw.ext === 'object' && !Array.isArray(raw.ext) ? raw.ext : {};
+    for(const [k, v] of Object.entries(ext)){ const n = num(v); if(EXT.test(k) && n) out.ext[k] = n; }
     return out;
   }
   /* Per-field MAX of `from` into `into`. Returns whether anything in `into` moved. */
@@ -47,6 +57,8 @@
     if(f.notif > into.notif){ into.notif = f.notif; changed = true; }
     if(f.dmAll > into.dmAll){ into.dmAll = f.dmAll; changed = true; }
     for(const [k, v] of Object.entries(f.dm)) if(v > (into.dm[k] || 0)){ into.dm[k] = v; changed = true; }
+    if(!into.ext) into.ext = {};
+    for(const [k, v] of Object.entries(f.ext)) if(v > (into.ext[k] || 0)){ into.ext[k] = v; changed = true; }
     return changed;
   }
   /* A conversation mark at or below `dmAll` says nothing `dmAll` does not, so it is dropped first;
@@ -54,13 +66,27 @@
   function trim(st){
     const rows = Object.entries(st.dm).filter(([, v]) => v > st.dmAll).sort((a, b) => b[1] - a[1]).slice(0, CAP);
     st.dm = Object.fromEntries(rows);
+    st.ext = Object.fromEntries(Object.entries(st.ext || {}).sort((a, b) => b[1] - a[1]).slice(0, CAP));
     return st;
   }
   /* Does `a` hold anything `b` lacks? (Whether a write would tell the relay something new.) */
   function ahead(a, b){
     if(a.notif > b.notif || a.dmAll > b.dmAll) return true;
     for(const [k, v] of Object.entries(a.dm)) if(v > Math.max(b.dm[k] || 0, b.dmAll)) return true;
+    for(const [k, v] of Object.entries(a.ext || {})) if(v > ((b.ext || {})[k] || 0)) return true;
     return false;
+  }
+  /* A per-device ledger (`{ <id>: { at:<newest message, ms>, ... } }`) minus every row the account has read up to or
+   * past its newest message. `prefix` names the source ('tg' / 'sms'). Pure: returns {ledger, removed}. */
+  function prune(ledger, ext, prefix){
+    const out = {}; let removed = 0;
+    for(const [k, row] of Object.entries(ledger || {})){
+      const mark = (ext || {})[prefix + ':' + k] || 0;
+      const at = Math.floor((Number(row && row.at) || 0) / 1000);
+      if(mark && at && at <= mark){ removed++; continue; }
+      out[k] = row;
+    }
+    return { ledger: out, removed };
   }
   const dTag = ev => ((ev && Array.isArray(ev.tags) ? ev.tags : []).find(t => t && t[0] === 'd') || [])[1];
 
@@ -72,16 +98,16 @@
     const now = o.now || (() => Math.floor(Date.now() / 1000));
     const current = () => !stopped && (!o.isCurrent || !!o.isCurrent(owner));
     let stopped = false, answered = false, loading = null, saving = null, timer = null, loadTries = 0;
-    let st = { notif: 0, dmAll: 0, dm: {} }, pending = false;
+    let st = { notif: 0, dmAll: 0, dm: {}, ext: {} }, pending = false;
     try{
       const c = JSON.parse(o.storage.get(key) || 'null');
       if(c && c.owner === owner){ st = clean(c); pending = c.pending === true; }
     }catch(_){ }
     function persist(){
-      try{ o.storage.set(key, JSON.stringify({ owner, v: 1, notif: st.notif, dmAll: st.dmAll, dm: st.dm, pending })); }catch(_){ }
+      try{ o.storage.set(key, JSON.stringify({ owner, v: 1, notif: st.notif, dmAll: st.dmAll, dm: st.dm, ext: st.ext, pending })); }catch(_){ }
     }
     function changed(){ persist(); if(o.onChange) try{ o.onChange(snapshot()); }catch(_){ } }
-    const snapshot = () => ({ owner, notif: st.notif, dmAll: st.dmAll, dm: { ...st.dm } });
+    const snapshot = () => ({ owner, notif: st.notif, dmAll: st.dmAll, dm: { ...st.dm }, ext: { ...st.ext } });
 
     /* {ok, state}: ok = a relay answered COMPLETELY and the newest copy (if any) could be opened --
      * only then may a write follow. `state` is whatever could be read, adopted either way (MAX is safe). */
@@ -100,7 +126,7 @@
         try{ doc = JSON.parse(await o.decrypt(ev.content) || 'null'); }catch(_){ doc = null; }
         if(!doc || typeof doc !== 'object'){ if(first) bad = true; first = false; continue; }
         first = false;
-        if(!state) state = { notif: 0, dmAll: 0, dm: {} };
+        if(!state) state = { notif: 0, dmAll: 0, dm: {}, ext: {} };
         merge(state, doc);
       }
       /* "Answered" = every relay EOSE'd, OR this node's own relay did (o.homeAnswered, relay.js). The
@@ -140,11 +166,11 @@
         const fresh = await read();
         if(!current()) return false;
         if(!fresh.ok){ adopt(fresh.state); schedule(retry); return false; }
-        const remote = fresh.state || { notif: 0, dmAll: 0, dm: {} };
+        const remote = fresh.state || { notif: 0, dmAll: 0, dm: {}, ext: {} };
         adopt(remote);
         if(!ahead(st, clean(remote))){ pending = false; persist(); return true; }   // the relay already knows
         trim(st);
-        const body = JSON.stringify({ v: 1, notif: st.notif, dmAll: st.dmAll, dm: st.dm });
+        const body = JSON.stringify({ v: 1, notif: st.notif, dmAll: st.dmAll, dm: st.dm, ext: st.ext });
         const content = await o.encrypt(body);
         if(!current()) return false;
         let ok = false;
@@ -178,6 +204,9 @@
       markNotif: ts => mark(() => { const n = cap(ts); if(n > st.notif) st.notif = n; }),
       markDmAll: ts => mark(() => { const n = cap(ts); if(n > st.dmAll) st.dmAll = n; }),
       markDm: (pk, ts) => mark(() => { const n = cap(ts); if(HEX.test(String(pk)) && n > Math.max(st.dmAll, st.dm[pk] || 0)) st.dm[pk] = n; }),
+      /* A Telegram chat or a Texts conversation read up to `ts` (unix seconds) -- `key` is "tg:<chat>" / "sms:<conv>". */
+      extFor: k => st.ext[String(k)] || 0,
+      markExt: (k, ts) => mark(() => { k = String(k); const n = cap(ts); if(EXT.test(k) && n > (st.ext[k] || 0)) st.ext[k] = n; }),
       /* A copy that arrived on a live subscription: adopted (MAX), but it never grants a write. */
       async ingest(ev){
         if(!current() || !ev || ev.pubkey !== owner || ev.kind !== 30078 || dTag(ev) !== D) return false;
@@ -193,5 +222,5 @@
       stop(){ stopped = true; if(timer) clearTimeout(timer); timer = null; },
     };
   }
-  root.PCSeen = { create, merge, clean, D, CAP };
+  root.PCSeen = { create, merge, clean, prune, D, CAP };
 })(typeof window !== 'undefined' ? window : globalThis);
