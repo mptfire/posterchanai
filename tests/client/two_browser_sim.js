@@ -207,7 +207,10 @@ async function settle(a, b, opts) {
    this wait every check on what a local change did would pass by simply never having run. */
 const drain = () => new Promise(r => setTimeout(r, 600));
 
-(async () => {
+/* The pieces another simulation builds on (android_bookmarks_sim.js: a desktop Firefox and PosterFox for Android on
+ * one relay). Required, the scenarios below do not run; run directly, they do, exactly as before. */
+module.exports = { makeRelay, makeBrowser, CLOCK, FakeDate, FIREFOX_ROOTS, CHROME_ROOTS, tick, SRC };
+if (require.main === module) (async () => {
   // ---- 1. The same URL, filed differently on each browser --------------------------------------
   {
     const relay = makeRelay();

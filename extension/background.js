@@ -22,7 +22,9 @@
  */
 'use strict';
 
-const B = (typeof browser !== 'undefined') ? browser : chrome;
+/* PC_BROWSER exists only in PosterFox for Android's built-in copy: bookmarks-native.js sets it to the real `browser`
+ * with a `bookmarks` served by the app (Firefox for Android has none). Everywhere else it is undefined. */
+const B = self.PC_BROWSER || ((typeof browser !== 'undefined') ? browser : chrome);
 const V = (typeof PCVaultCore !== 'undefined') ? PCVaultCore : self.PCVaultCore;
 const NT = () => (typeof NostrTools !== 'undefined' ? NostrTools : self.NostrTools);
 

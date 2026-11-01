@@ -173,6 +173,27 @@ EOF
 # manifest is not at the root, which is refused at upload with no useful message.
 ( cd dist/chrome && pack ../posterchan-passwords-chrome.zip $FILES background-chrome.js )
 
+# ---- PosterFox for Android (built in) -------------------------------------------------------------
+# The SAME sources again, as the BUILT-IN extension PosterFox for Android ships in its app assets. Two differences,
+# both generated: bookmarks-native.js is loaded ahead of bookmarks.js (Firefox for Android has no bookmarks API; that
+# file serves one from the app over native messaging), and `nativeMessaging` is requested — only a built-in extension
+# can use it there, and asking for it in the AMO build would put a new permission prompt in front of every desktop user.
+rm -rf dist/android dist/posterchan-passwords-android.zip
+mkdir -p dist/android
+for f in $FILES bookmarks-native.js; do cp -r "$f" dist/android/; done
+python3 - <<'EOF'
+import json
+m = json.load(open('manifest.json'))
+scripts = m['background']['scripts']
+scripts.insert(scripts.index('bookmarks.js'), 'bookmarks-native.js')
+if 'nativeMessaging' not in m['permissions']:
+    m['permissions'].append('nativeMessaging')
+with open('dist/android/manifest.json', 'w') as fh:
+    json.dump(m, fh, indent=2)
+    fh.write('\n')
+EOF
+( cd dist/android && pack ../posterchan-passwords-android.zip $FILES bookmarks-native.js )
+
 echo "built dist/posterchan-passwords.zip, dist/posterchan-passwords-unpacked.tar.gz"
 echo "  and dist/posterchan-passwords-chrome.zip (+ dist/chrome/ to load unpacked)"
 echo
