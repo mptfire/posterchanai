@@ -39,7 +39,7 @@ jobs:
       AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build (and prove the palette is still readable)
         id: build
@@ -89,7 +89,7 @@ jobs:
 
       - name: Publish the signed theme
         if: steps.have.outputs.signed == 'no' && env.AMO_JWT_ISSUER != '' && steps.amo.outputs.ready == 'yes'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: firefox-theme-v${{ steps.build.outputs.ver }}
           name: PosterChan Cyberpunk — Firefox theme ${{ steps.build.outputs.ver }} (signed)
