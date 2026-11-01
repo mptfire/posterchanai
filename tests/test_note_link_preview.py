@@ -102,3 +102,59 @@ def test_the_card_lands_in_the_shipped_head_with_the_site_name(monkeypatch):
     assert head.count('property="og:site_name"') == 1
     assert '<meta name="twitter:card" content="summary">' in head
     assert "<b>" not in head, "the author name was not escaped"
+
+
+def _head(meta, monkeypatch):
+    from app.routers import client as client_router
+    monkeypatch.setattr(client_router, "_default_theme", lambda db: "cyberpunk")
+    resp = asyncio.run(client_router.render_client_shell(_request("/" + REPORTED), db=None, meta=meta))
+    html = resp.body.decode() if hasattr(resp, "body") else str(resp)
+    return html[:html.index("</head>")]
+
+
+def test_a_video_post_plays_in_discord(monkeypatch):
+    """"image and link embeds work i am told on discord but not video" (2026-10-31): the preview carried og:image only,
+    so a video post unfurled as a still. Discord plays og:video when it is a direct https mp4/webm WITH a size. Measured
+    in the shipped <head>, from a real imeta tag (url, m, dim, and the poster frame in `image`)."""
+    from app.services import note_share
+    ev = {"content": "watch this https://blossom.poster.place/abc.mp4", "tags": [
+        ["imeta", "url https://blossom.poster.place/abc.mp4", "m video/mp4", "dim 1080x1920",
+         "image https://blossom.poster.place/abc.jpg"]]}
+    card = {"author": "a", "avatar": "https://m/a.png", "image": note_share._first_image(ev), "text": "watch this",
+            "video": note_share._first_video(ev)}
+    head = _head(note_share.note_meta(card, "https://poster.place/" + REPORTED), monkeypatch)
+    assert '<meta property="og:video" content="https://blossom.poster.place/abc.mp4">' in head
+    assert '<meta property="og:video:secure_url" content="https://blossom.poster.place/abc.mp4">' in head
+    assert '<meta property="og:video:type" content="video/mp4">' in head
+    assert '<meta property="og:video:width" content="1080">' in head and '<meta property="og:video:height" content="1920">' in head
+    assert '<meta property="og:type" content="video.other">' in head
+    assert '<meta property="og:image" content="https://blossom.poster.place/abc.jpg">' in head, "the poster frame is the still"
+    assert note_share._plain(ev["content"]) == "watch this", "the video link is not in the text line"
+
+
+def test_a_bare_video_link_plays_too_and_a_stream_playlist_is_not_offered():
+    from app.services import note_share
+    v = note_share._first_video({"content": "clip https://nostr.build/v/x.webm?x=1", "tags": []})
+    assert v["url"] == "https://nostr.build/v/x.webm?x=1" and v["type"] == "video/webm"
+    meta = note_share.note_meta({"author": "a", "avatar": "https://m/a.png", "image": "", "text": "", "video": v}, "u")
+    assert meta["video_width"] == 1280 and meta["video_height"] == 720, "Discord shows no player without a size"
+    assert meta["image"] == "https://m/a.png"
+    hls = {"content": "", "tags": [["imeta", "url https://x.example/live.m3u8", "m application/x-mpegURL"]]}
+    assert note_share._first_video(hls) == {}, "no unfurler plays a playlist"
+    assert note_share._first_video({"content": "", "tags": [["imeta", "url http://x.example/a.mp4", "m video/mp4"]]}) == {}, \
+        "https only: Discord refuses a mixed-content player"
+
+
+def test_a_picture_post_names_no_video(monkeypatch):
+    from app.services import note_share
+    card = {"author": "a", "avatar": "", "image": "https://media.poster.place/x.jpg", "text": "pic",
+            "video": note_share._first_video({"content": "pic https://media.poster.place/x.jpg", "tags": []})}
+    head = _head(note_share.note_meta(card, "u"), monkeypatch)
+    assert "og:video" not in head and '<meta property="og:type" content="article">' in head
+
+
+def test_a_video_url_cannot_break_out_of_the_tag(monkeypatch):
+    from app.services import note_share
+    v = note_share._first_video({"content": "", "tags": [["imeta", 'url https://x.example/a.mp4?"><script>', "m video/mp4"]]})
+    head = _head(note_share.note_meta({"author": "a", "avatar": "", "image": "", "text": "", "video": v}, "u"), monkeypatch)
+    assert "<script>" not in head.split('og:video"')[1][:200]

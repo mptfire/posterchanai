@@ -53,6 +53,11 @@
     <meta property="og:description" content="{{ meta.description }}">
     {% if meta.url %}<meta property="og:url" content="{{ meta.url }}">{% endif %}
     {% if meta.image %}<meta property="og:image" content="{{ meta.image }}">{% endif %}
+    {% if meta.video %}<meta property="og:video" content="{{ meta.video }}">
+    <meta property="og:video:secure_url" content="{{ meta.video }}">
+    <meta property="og:video:type" content="{{ meta.video_type }}">
+    <meta property="og:video:width" content="{{ meta.video_width }}">
+    <meta property="og:video:height" content="{{ meta.video_height }}">{% endif %}
     <meta name="twitter:card" content="{{ meta.card if meta.card else ('summary_large_image' if meta.image else 'summary') }}">
     <meta name="twitter:title" content="{{ meta.title }}">
     <meta name="twitter:description" content="{{ meta.description }}">

@@ -22,7 +22,9 @@ SITE = "PosterChan"
 _CARD_TTL = 300.0
 _cache: dict[str, tuple[float, dict | None]] = {}
 _IMG = re.compile(r"https://[^\s<>\"']+?\.(?:png|jpe?g|gif|webp|avif)(?:\?[^\s<>\"']*)?", re.I)
-_SHOWN_KINDS = (1, 20, 1068, 1111, 30023)          # what a shared post link can usefully preview
+_VID = re.compile(r"https://[^\s<>\"']+?\.(mp4|webm|mov)(?:\?[^\s<>\"']*)?", re.I)
+_VID_TYPE = {"mp4": "video/mp4", "webm": "video/webm", "mov": "video/mp4"}
+_SHOWN_KINDS = (1, 20, 21, 22, 1068, 1111, 30023)          # what a shared post link can usefully preview
 
 
 def decode(entity: str) -> dict | None:
@@ -87,6 +89,37 @@ def _first_image(ev: dict) -> str:
     return m.group(0)[:2048] if m else ""
 
 
+def _first_video(ev: dict) -> dict:
+    """The post's first PLAYABLE video -- {url, type, width, height, poster} or {}.
+
+    "image and link embeds work on discord but not video" (2026-10-31): a post's preview carried og:image only, so a
+    video post unfurled as a still card with nothing to play. Discord (and Telegram, Slack, X) plays a video from
+    og:video when it is a direct mp4/webm over https with a size. An imeta tag says it best (NIP-92: `m video/…`,
+    `dim WxH`, and `image` = a poster frame); a bare link in the text is the fallback. HLS (.m3u8) is skipped -- no
+    unfurler plays a playlist, and naming one would only replace the picture with a broken player."""
+    for t in ev.get("tags") or []:
+        if not (isinstance(t, list) and t and t[0] == "imeta"):
+            continue
+        f = {}
+        for x in t[1:]:
+            if isinstance(x, str) and " " in x:
+                k, v = x.split(" ", 1)
+                f.setdefault(k, v)
+        url, mime = f.get("url", ""), f.get("m", "")
+        m = _VID.fullmatch(url) if url else None
+        if not url.startswith("https://") or not (mime.startswith("video/") or m) or "mpegurl" in mime.lower():
+            continue
+        w, h = 0, 0
+        dm = re.fullmatch(r"(\d{1,5})x(\d{1,5})", f.get("dim", ""))
+        if dm:
+            w, h = int(dm.group(1)), int(dm.group(2))
+        poster = f.get("image", "")
+        return {"url": url[:2048], "type": mime if mime.startswith("video/") else _VID_TYPE[m.group(1).lower()],
+                "width": w, "height": h, "poster": poster[:2048] if poster.startswith("https://") else ""}
+    m = _VID.search(ev.get("content") or "")
+    return {"url": m.group(0)[:2048], "type": _VID_TYPE[m.group(1).lower()], "width": 0, "height": 0, "poster": ""} if m else {}
+
+
 async def note_card(port: int, ref: dict) -> dict | None:
     """The shareable facts about one post, read off this node's relay; None when it is not here."""
     key = ref.get("id") or ""
@@ -108,7 +141,8 @@ async def note_card(port: int, ref: dict) -> dict | None:
             except Exception:
                 prof = {}
             card = {"author": prof.get("name") or "", "avatar": prof.get("picture") or "",
-                    "text": _plain(ev.get("content") or ""), "image": _first_image(ev), "pubkey": ev.get("pubkey") or ""}
+                    "text": _plain(ev.get("content") or ""), "image": _first_image(ev), "pubkey": ev.get("pubkey") or "",
+                    "video": _first_video(ev)}
     except Exception as e:
         logger.debug("[note-share] card read failed for %s: %s", key[:12], e)
         return None
@@ -123,7 +157,15 @@ def note_meta(card: dict, url: str, fallback_image: str = "") -> dict:
     or the author's (a small one, as Ditto's is)."""
     who = card.get("author") or ("npub…" + (card.get("pubkey") or "")[-6:] if card.get("pubkey") else "Someone")
     big = bool(card.get("image"))
-    return {"title": ("%s on %s" % (who, SITE))[:120],
+    meta = {"title": ("%s on %s" % (who, SITE))[:120],
             "description": card.get("text") or ("A post on %s." % SITE),
             "url": url, "image": card.get("image") or card.get("avatar") or fallback_image or "",
             "type": "article", "site": SITE, "card": "summary_large_image" if big else "summary"}
+    v = card.get("video") or {}
+    if v.get("url"):
+        # A video post: og:video plays inline. The size is REQUIRED by Discord to show a player at all; unknown is
+        # 1280x720, which it letterboxes. The still is the poster frame, else the post's picture, else the avatar.
+        meta.update({"type": "video.other", "card": "summary_large_image", "video": v["url"], "video_type": v.get("type") or "video/mp4",
+                     "video_width": v.get("width") or 1280, "video_height": v.get("height") or 720,
+                     "image": v.get("poster") or meta["image"]})
+    return meta
