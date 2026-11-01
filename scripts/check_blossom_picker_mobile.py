@@ -76,7 +76,9 @@ async def run():
     proc=subprocess.Popen([chrome,'--headless=new','--no-sandbox',f'--remote-debugging-port={CDP_PORT}',f'--user-data-dir={td.name}','about:blank'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     try:
         tab=None
-        for _ in range(40):
+        # 30 s, not 8: under the deploy gate's parallel shards on a GitHub runner Chrome took longer than 8 s to come up,
+        # and the check failed there twice in one run while passing every time alone (deploy 189).
+        for _ in range(150):
             try:
                 tabs=json.load(urllib.request.urlopen(f'http://127.0.0.1:{CDP_PORT}/json/list'))
                 tab=next(t for t in tabs if t.get('type')=='page' and not t.get('url','').startswith('chrome-extension:'));break
@@ -95,9 +97,12 @@ async def run():
                 await call('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':3,'mobile':True})
                 await call('Page.navigate',{'url':f'http://127.0.0.1:{PORT}/'})
                 await asyncio.sleep(.3)
-                for _ in range(40):
+                ready=False
+                for _ in range(300):        # the page loads the whole client; give a loaded runner 30 s
                     await asyncio.sleep(.1); z=await call('Runtime.evaluate',{'expression':'window.__ready===true','returnByValue':True})
-                    if z.get('result',{}).get('value'):break
+                    if z.get('result',{}).get('value'): ready=True; break
+                if not ready:
+                    print(f'FAIL {width}x{height}: the picker page never became ready in 30 s'); return 1
                 z=await call('Runtime.evaluate',{'expression':AUDIT,'returnByValue':True}); out=z.get('result',{}).get('value')
                 if not out and z.get('exceptionDetails'):
                     why=await call('Runtime.evaluate',{'expression':'JSON.stringify({url:location.href,errors:window.__errors,body:document.body.innerHTML.slice(0,500)})','returnByValue':True})
