@@ -57,6 +57,11 @@ def test_phone_tabs_are_a_dropdown(tmp_path):
         await b.click_sel("#tty-more-font-more")
         await asyncio.sleep(.3)
         out["fontGrew"] = (await b.js(STATE))["font"] > before if before else (await b.js(STATE))["font"] > 0
+        grown = (await b.js(STATE))["font"]
+        await b.click_sel("#tty-more")
+        await b.click_sel("#tty-more-font-less")
+        await asyncio.sleep(.3)
+        out["fontShrank"] = (await b.js(STATE))["font"] < grown
 
     rig._run(tmp_path, 390, 800, True, body)
     s = out["start"]
@@ -66,6 +71,7 @@ def test_phone_tabs_are_a_dropdown(tmp_path):
     assert s["kill"] and not s["hScroll"], s
     assert not s["barFont"] and s["pickW"] >= 120, ("the dropdown is squeezed by A−/A+ in the bar", s)
     assert out["menuFont"] and out["fontGrew"], ("⋯ -> Larger text is missing or does nothing on a phone", out)
+    assert out["fontShrank"], ("⋯ -> Smaller text does nothing on a phone", out)
     w = out["switched"]
     assert w["cur"] != s["cur"] and w["value"] == w["cur"], ("choosing a shell in the dropdown did not switch to it", w)
     c = out["closed"]
